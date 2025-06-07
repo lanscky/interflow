@@ -28,8 +28,8 @@ SECRET_KEY = "django-insecure-x@q_#0_9+(y1r9(!3@l(figysu3oyy)(=p%rap019h8qc5lf2i
 # DEBUG = True
 # ALLOWED_HOSTS = []
 DEBUG = os.environ.get("DJANGO_DEBUG", "False") == "True"
-
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",")
+ALLOWED_HOSTS = ['interflow.onrender.com']
+#ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",")
 
 # Application definition
 
