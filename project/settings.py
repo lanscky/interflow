@@ -25,10 +25,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-x@q_#0_9+(y1r9(!3@l(figysu3oyy)(=p%rap019h8qc5lf2i"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-# DEBUG = True
+DEBUG = True
 # ALLOWED_HOSTS = []
-DEBUG = os.environ.get("DJANGO_DEBUG", "False") == "True"
-ALLOWED_HOSTS = ['interflow.onrender.com']
+#DEBUG = os.environ.get("DJANGO_DEBUG", "False") == "True"
+ALLOWED_HOSTS = ['interflow.onrender.com', 'localhost', '127.0.0.1']
 #ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",")
 
 # Application definition
@@ -111,9 +111,9 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.environ.get('DB_NAME', 'appstage'),
-        'USER': os.environ.get('DB_USER', 'appstage_user'), #  admin_django
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'LKbBvWehzuSlO1c7HUU8lX8IAqdiTHLk'), # Admin@2015
-        'HOST': os.environ.get('DB_HOST', 'postgresql://appstage_user:LKbBvWehzuSlO1c7HUU8lX8IAqdiTHLk@dpg-d124ej6mcj7s73evgthg-a/appstage'), # 127.0.0.1
+        'USER': os.environ.get('DB_USER', 'admin_django'), #  admin_django
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'Admin@2015'), # Admin@2015
+        'HOST': os.environ.get('DB_HOST', 'localhost'), # 127.0.0.1
         'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
