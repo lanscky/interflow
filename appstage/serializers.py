@@ -8,15 +8,38 @@ from .models import (
 
 User = get_user_model()
 
+# class UserSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = User
+#         fields = ['id', 'username', 'email', 'password', 'role']
+#         extra_kwargs = {'password': {'write_only': True}}
+
+#     def create(self, validated_data):
+#         user = User.objects.create_user(**validated_data)
+#         return user
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'password', 'role']
-        extra_kwargs = {'password': {'write_only': True}}
+        fields = ['id', 'username', 'email', 'password', 'role', 'is_superuser', 'is_staff']
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'is_superuser': {'write_only': True},
+            'is_staff': {'write_only': True},
+        }
 
     def create(self, validated_data):
-        user = User.objects.create_user(**validated_data)
+        password = validated_data.pop('password')
+        is_superuser = validated_data.pop('is_superuser', False)
+        is_staff = validated_data.pop('is_staff', False)
+
+        user = User(**validated_data)
+        user.set_password(password)
+        user.is_superuser = is_superuser
+        user.is_staff = is_staff
+        user.save()
         return user
+
 
 class SchoolSerializer(serializers.ModelSerializer):
     class Meta:
