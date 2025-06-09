@@ -47,8 +47,10 @@ INSTALLED_APPS = [
     #'corsheaders',
     #'django_extensions',
 ]
-
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'd9ZKYd7VNH7DAAOvOc1dseHcNkEq1Ntm_W63bnekTy11uX3rTpdt42O6Q9PcgvKibfookGdvoQS5_KNW9TSAIg')
 SIMPLE_JWT = {
+    "SIGNING_KEY": JWT_SECRET_KEY,
+    "ALGORITHM": "HS256",
     "ACCESS_TOKEN_LIFETIME": timedelta(days=1),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
 }
