@@ -11,6 +11,9 @@ class User(AbstractUser):
         ('company', 'Entreprise'),
     )
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
+    profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True)
+    telephone = models.CharField(max_length=15, null=True, blank=True)  
+
 
 # 2. Profil étudiant
 class Student(models.Model):
@@ -19,6 +22,27 @@ class Student(models.Model):
     filiere = models.CharField(max_length=100) # ex: Informatique, Mathématiques, etc.
     niveau = models.CharField(max_length=50)  # ex: Licence 3, Master 1, etc.
     cv = models.FileField(upload_to='cvs/', null=True, blank=True)
+
+
+class Competence(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)  # ex: Python, Java, Gestion de projet, etc.
+    level = models.CharField(max_length=50)  # ex: Débutant, Intermédiaire, Avancé
+    description = models.TextField(null=True, blank=True)  # Optionnel
+    created_at = models.DateTimeField(auto_now_add=True)  # Date de création de la compétence
+    updated_at = models.DateTimeField(auto_now=True)  # Date de dernière mise à jour de la compétence
+    is_active = models.BooleanField(default=True)  # Indique si la compétence est active ou non
+
+    def __str__(self):
+        return f"{self.name} ({self.level}) - {self.student.user.username}"
+    
+class Formation(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    title = models.CharField(max_length=100)  # ex: "Master en Informatique"
+    institution = models.CharField(max_length=100)  # ex: "Université de Paris"
+    start_date = models.DateField()
+    end_date = models.DateField()
+    description = models.TextField(null=True, blank=True)  # Optionnel
 
 # 3. École
 class School(models.Model):
@@ -35,6 +59,8 @@ class SchoolUser(models.Model):
         default='editor'
     )
     is_active = models.BooleanField(default=True)
+
+
 # 4. Entreprise
 class Company(models.Model):
     name = models.CharField(max_length=150)
@@ -51,10 +77,20 @@ class CompanyUser(models.Model):
     )
     is_active = models.BooleanField(default=True)
 
+
 # 5. Offre de stage
 class OffreStage(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE)
     title = models.CharField(max_length=150)
+    type_contrat = models.CharField(max_length=50, choices=[
+        ('stage', 'Stage'),
+        ('alternance', 'Alternance'),
+        ('freelance', 'Freelance'),
+        ('cdi', 'CDI'),
+        ('cdd', 'CDD'),
+    ])
+    remuneration = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Montant en euros
+    duration = models.CharField(max_length=50)  # ex: "3 mois", "6 mois", "1 an"
     description = models.TextField()
     localisation = models.CharField(max_length=150)
     niveau_requis = models.CharField(max_length=50)
@@ -62,6 +98,7 @@ class OffreStage(models.Model):
     end_date = models.DateField()
     published_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
+
 
 # 6. Candidature
 class Candidature(models.Model):
@@ -76,6 +113,7 @@ class Candidature(models.Model):
         ('rejected', 'Rejetée'),
     ], default='pending')
 
+
 # 7. Stage validé
 class AffectationStage(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
@@ -84,6 +122,8 @@ class AffectationStage(models.Model):
     convention_pdf = models.FileField(upload_to='conventions/', null=True, blank=True)
     supervisor_name = models.CharField(max_length=150, null=True, blank=True)
     supervisor_email = models.EmailField(null=True, blank=True)
+
+
 
 # 8. Évaluation finale
 class Evaluation(models.Model):
