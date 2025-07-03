@@ -5,9 +5,84 @@ from .models import (
     Student, School, SchoolUser, Company, CompanyUser,
     OffreStage, Candidature, AffectationStage, Evaluation
 )
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 User = get_user_model()
 
+
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        user = self.user
+
+        # Infos de base du user
+        user_data = {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role_user": user.role
+        }
+        
+
+        # Ajouter les infos spécifiques selon le rôle
+        if user.role == 'student':
+            try:
+                student = Student.objects.select_related('school').get(user=user)
+                user_data["student"] = {
+                    "filiere": student.filiere,
+                    "niveau": student.niveau,
+                    "cv": student.cv.url if student.cv else None,
+                    "school": {
+                        "id": student.school.id,
+                        "name": student.school.name,
+                        "email": student.school.contact_email,
+                        "address": student.school.address
+                    } if student.school else None
+                }
+            except Student.DoesNotExist:
+                user_data["student"] = None
+
+        elif user.role == 'school':
+            try:
+                school_user = SchoolUser.objects.select_related('school').get(user=user)
+                school = school_user.school
+                user_data["school_user"] = {
+                    "role_school": school_user.role,
+                    "is_active": school_user.is_active,
+                    "school": {
+                        "id": school.id,
+                        "name": school.name,
+                        "email": school.contact_email,
+                        "address": school.address
+                    }
+                }
+            except SchoolUser.DoesNotExist:
+                user_data["school_user"] = None
+
+        elif user.role == 'company':
+            try:
+                company_user = CompanyUser.objects.select_related('company').get(user=user)
+                company = company_user.company
+                user_data["company_user"] = {
+                    "role_company": company_user.role,
+                    "is_active": company_user.is_active,
+                    "company": {
+                        "id": company.id,
+                        "name": company.name,
+                        "secteur": company.secteur,
+                        "description": company.description
+                    }
+                }
+            except CompanyUser.DoesNotExist:
+                user_data["company_user"] = None
+
+        # Injecter les données dans la réponse JWT
+        data["user"] = user_data
+
+        return data
 # class UserSerializer(serializers.ModelSerializer):
 #     class Meta:
 #         model = User
