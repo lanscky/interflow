@@ -9,9 +9,20 @@ from .models import (
 from .serializers import (
     UserSerializer, StudentSerializer, SchoolSerializer, SchoolUserSerializer,
     CompanySerializer, CompanyUserSerializer, OffreStageSerializer,
-    CandidatureSerializer, AffectationStageSerializer, EvaluationSerializer
+    CandidatureSerializer, AffectationStageSerializer, EvaluationSerializer, CustomTokenObtainPairSerializer
 )
 from rest_framework.pagination import PageNumberPagination
+# Surcharge de la methode d'authentification JWT pour inclure des informations utilisateur
+from rest_framework_simplejwt.views import TokenObtainPairView
+from .serializers import CustomTokenObtainPairSerializer
+
+
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+
+# Fin de la surcharge de la methode d'authentification JWT
+
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 100
