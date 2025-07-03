@@ -3,7 +3,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
     Student, School, SchoolUser, Company, CompanyUser,
-    OffreStage, Candidature, AffectationStage, Evaluation
+    OffreStage, Candidature, AffectationStage, Evaluation, Formation, Competence 
 )
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -194,3 +194,18 @@ class EvaluationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Evaluation
         fields = '__all__'
+class FormationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Formation
+        fields = '__all__'
+        
+
+class CompetenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Competence
+        fields = '__all__'
+
+    def create(self, validated_data):
+        student = validated_data.pop('student')
+        competence = Competence.objects.create(student=student, **validated_data)
+        return competence

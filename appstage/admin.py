@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin 
 from django.contrib.auth.forms import UserCreationForm
-from .models import User, Student, School, SchoolUser, Company, CompanyUser, OffreStage, Candidature, AffectationStage, Evaluation
+from .models import User, Student, School, SchoolUser, Company, CompanyUser, OffreStage, Candidature, AffectationStage, Evaluation, Competence, Formation
 # Register your models here.
 
 class CustomUserAdmin(UserAdmin):
@@ -24,4 +24,6 @@ admin.site.register(CompanyUser, admin.ModelAdmin)  # Assuming CompanyUserAdmin 
 admin.site.register(OffreStage, admin.ModelAdmin)  # Assuming OffreStageAdmin is not defined, using default ModelAdmin
 admin.site.register(Candidature, admin.ModelAdmin)  # Assuming CandidatureAdmin is not defined, using default ModelAdmin
 admin.site.register(AffectationStage, admin.ModelAdmin)  # Assuming AffectationStageAdmin is not defined, using default ModelAdmin
-admin.site.register(Evaluation, admin.ModelAdmin)  
+admin.site.register(Evaluation, admin.ModelAdmin)  # Assuming EvaluationAdmin is not defined, using default ModelAdmin
+admin.site.register(Competence, admin.ModelAdmin)  # Assuming CompetenceAdmin is not defined, using default ModelAdmin
+admin.site.register(Formation, admin.ModelAdmin)  # Assuming FormationAdmin is not defined, using default ModelAdmin
