@@ -4,12 +4,12 @@ from rest_framework.permissions import IsAuthenticated
 from .models import (
     User, Student, School, SchoolUser,
     Company, CompanyUser, OffreStage,
-    Candidature, AffectationStage, Evaluation
+    Candidature, AffectationStage, Evaluation, Formation, Competence
 )
 from .serializers import (
     UserSerializer, StudentSerializer, SchoolSerializer, SchoolUserSerializer,
     CompanySerializer, CompanyUserSerializer, OffreStageSerializer,
-    CandidatureSerializer, AffectationStageSerializer, EvaluationSerializer, CustomTokenObtainPairSerializer
+    CandidatureSerializer, AffectationStageSerializer, EvaluationSerializer, CustomTokenObtainPairSerializer, FormationSerializer, CompetenceSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 # Surcharge de la methode d'authentification JWT pour inclure des informations utilisateur
@@ -77,4 +77,14 @@ class AffectationStageViewSet(viewsets.ModelViewSet):
 class EvaluationViewSet(viewsets.ModelViewSet):
     queryset = Evaluation.objects.all()
     serializer_class = EvaluationSerializer
+    permission_classes = [IsAuthenticated]
+
+class FormationViewSet(viewsets.ModelViewSet):
+    queryset = Formation.objects.all()
+    serializer_class = FormationSerializer
+    permission_classes = [IsAuthenticated]
+
+class CompetenceViewSet(viewsets.ModelViewSet):
+    queryset = Competence.objects.all()
+    serializer_class = CompetenceSerializer
     permission_classes = [IsAuthenticated]
