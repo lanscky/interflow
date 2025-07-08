@@ -28,7 +28,7 @@ SECRET_KEY = "django-insecure-x@q_#0_9+(y1r9(!3@l(figysu3oyy)(=p%rap019h8qc5lf2i
 DEBUG = True
 # ALLOWED_HOSTS = []
 #DEBUG = os.environ.get("DJANGO_DEBUG", "False") == "True"
-ALLOWED_HOSTS = ['interflow.onrender.com', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['interflow.onrender.com', 'localhost', '127.0.0.1','34.204.5.59']
 #ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",")
 
 # Application definition
@@ -109,16 +109,31 @@ WSGI_APPLICATION = "project.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
+# The `DATABASES` setting in Django is a dictionary that defines the configuration for database
+# connections. In this specific configuration:
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': os.environ.get('DB_NAME', 'appstage'),
+#         'USER': os.environ.get('DB_USER', 'admin_django'), #  admin_django
+#         'PASSWORD': os.environ.get('DB_PASSWORD', 'Admin@2015'), # Admin@2015
+#         'HOST': os.environ.get('DB_HOST', 'localhost'), # 127.0.0.1
+#         'PORT': os.environ.get('DB_PORT', '5432'),
+#     }
+# }
+
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'appstage'),
-        'USER': os.environ.get('DB_USER', 'admin_django'), #  admin_django
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'Admin@2015'), # Admin@2015
-        'HOST': os.environ.get('DB_HOST', 'localhost'), # 127.0.0.1
-        'PORT': os.environ.get('DB_PORT', '5432'),
+        'NAME': os.getenv("POSTGRES_DB"),
+        'USER': os.getenv("POSTGRES_USER"),
+        'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
+        'HOST': 'db',
+        'PORT': '5432',
     }
 }
+
 
 SWAGGER_SETTINGS = {
     'LOGIN_URL' : '/admin/login/',
