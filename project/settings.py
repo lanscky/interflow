@@ -111,28 +111,28 @@ WSGI_APPLICATION = "project.wsgi.application"
 
 # The `DATABASES` setting in Django is a dictionary that defines the configuration for database
 # connections. In this specific configuration:
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'appstage'),
-        'USER': os.environ.get('DB_USER', 'admin_django'), #  admin_django
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'Admin@2015'), # Admin@2015
-        'HOST': os.environ.get('DB_HOST', 'localhost'), # 127.0.0.1
-        'PORT': os.environ.get('DB_PORT', '5432'),
-    }
-}
-
-
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': os.getenv("POSTGRES_DB"),
-#         'USER': os.getenv("POSTGRES_USER"),
-#         'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
-#         'HOST': 'db',
-#         'PORT': '5432',
+#         'NAME': os.environ.get('DB_NAME', 'appstage'),
+#         'USER': os.environ.get('DB_USER', 'admin_django'), #  admin_django
+#         'PASSWORD': os.environ.get('DB_PASSWORD', 'Admin@2015'), # Admin@2015
+#         'HOST': os.environ.get('DB_HOST', 'localhost'), # 127.0.0.1
+#         'PORT': os.environ.get('DB_PORT', '5432'),
 #     }
 # }
+
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv("POSTGRES_DB"),
+        'USER': os.getenv("POSTGRES_USER"),
+        'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
+        'HOST': 'db',
+        'PORT': '5432',
+    }
+}
 
 
 SWAGGER_SETTINGS = {
