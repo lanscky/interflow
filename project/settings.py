@@ -30,7 +30,13 @@ DEBUG = True
 #DEBUG = os.environ.get("DJANGO_DEBUG", "False") == "True"
 ALLOWED_HOSTS = ['interflow.onrender.com', 'localhost', '127.0.0.1','34.204.5.59']
 #ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",")
+CORS_ALLOW_ALL_ORIGINS = True
+# CORS_ALLOWED_ORIGINS = [
+#     "https://localhost:3000",
+#     "http://localhost:3000",
+# ]
 
+CORS_ALLOW_CREDENTIALS = True
 # Application definition
 
 INSTALLED_APPS = [
@@ -44,7 +50,7 @@ INSTALLED_APPS = [
     'appstage',
     'rest_framework_simplejwt',
     'drf_yasg',
-    #'corsheaders',
+    'corsheaders',
     #'django_extensions',
 ]
 #JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'd9ZKYd7VNH7DAAOvOc1dseHcNkEq1Ntm_W63bnekTy11uX3rTpdt42O6Q9PcgvKibfookGdvoQS5_KNW9TSAIg')
@@ -74,6 +80,7 @@ REST_FRAMEWORK = {
 }
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
