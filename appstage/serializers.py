@@ -21,6 +21,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             "id": user.id,
             "username": user.username,
             "email": user.email,
+            "profil_picture": user.profile_picture.url if user.profile_picture else None,
             "first_name": user.first_name,
             "last_name": user.last_name,
             "role_user": user.role
@@ -198,7 +199,7 @@ class FormationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Formation
         fields = '__all__'
-        
+
 
 class CompetenceSerializer(serializers.ModelSerializer):
     class Meta:
