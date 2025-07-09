@@ -12,12 +12,12 @@ class CustomUserAdmin(UserAdmin):
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('username', 'password1', 'password2', 'role','telephone','profil_picture'),  # Ajoutez le champ "role" ici
+            'fields': ('username', 'password1', 'password2', 'role','telephone','profile_picture'),  # Ajoutez le champ "role" ici
         }),
     )
     fieldsets = UserAdmin.fieldsets + (
         ('Informations personnalisées', {
-            'fields': ('role', 'telephone','profil_picture'),
+            'fields': ('role', 'telephone','profile_picture'),
         }),
     )
 admin.site.register(User, CustomUserAdmin)
