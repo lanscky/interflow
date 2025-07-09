@@ -16,12 +16,21 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
         user = self.user
 
+        # ✅ Récupérer request depuis le contexte
+        request = self.context.get('request')
+        # Construire l'URL absolue de la photo de profil
+        profile_picture_url = (
+            request.build_absolute_uri(user.profile_picture.url)
+            if user.profile_picture and request
+            else None
+        )
         # Infos de base du user
         user_data = {
             "id": user.id,
             "username": user.username,
             "email": user.email,
             "profile_picture": user.profile_picture.url if user.profile_picture else None,
+            "profile_picture_url": profile_picture_url,
             "first_name": user.first_name,
             "last_name": user.last_name,
             "role_user": user.role
