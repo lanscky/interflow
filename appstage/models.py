@@ -23,6 +23,9 @@ class Student(models.Model):
     niveau = models.CharField(max_length=50)  # ex: Licence 3, Master 1, etc.
     cv = models.FileField(upload_to='cvs/', null=True, blank=True)
 
+    def __str__(self):
+        return f"{self.user.username} - {self.filiere} ({self.niveau})"
+
 
 class Competence(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
@@ -43,12 +46,16 @@ class Formation(models.Model):
     start_date = models.DateField()
     end_date = models.DateField()
     description = models.TextField(null=True, blank=True)  # Optionnel
+    def __str__(self):
+        return f"{self.title} - {self.institution} ({self.start_date} - {self.end_date})"
 
 # 3. École
 class School(models.Model):
     name = models.CharField(max_length=150)
     address = models.TextField()
     contact_email = models.EmailField()
+    def __str__(self):
+        return self.name
 
 class SchoolUser(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)  # rôle "school"
@@ -59,6 +66,9 @@ class SchoolUser(models.Model):
         default='editor'
     )
     is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.school.name} ({self.role})"
 
 
 # 4. Entreprise
@@ -76,6 +86,8 @@ class CompanyUser(models.Model):
         default='hr'
     )
     is_active = models.BooleanField(default=True)
+    def __str__(self):
+        return f"{self.user.username} - {self.company.name} ({self.role})"
 
 
 # 5. Offre de stage
@@ -98,12 +110,14 @@ class OffreStage(models.Model):
     end_date = models.DateField()
     published_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
+    def __str__(self):
+        return f"{self.title} - {self.company.name} ({self.start_date} - {self.end_date})"
 
 
 # 6. Candidature
 class Candidature(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
-    offer = models.ForeignKey(OffreStage, on_delete=models.CASCADE)
+    offre_stage = models.ForeignKey(OffreStage, on_delete=models.CASCADE)
     motivation = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     letter_of_support = models.FileField(upload_to='letters_of_support/', null=True, blank=True)
@@ -112,22 +126,29 @@ class Candidature(models.Model):
         ('accepted', 'Acceptée'),
         ('rejected', 'Rejetée'),
     ], default='pending')
+    def __str__(self):
+        return f"{self.student.user.username} - {self.offre_stage.title} ({self.status})"
 
 
 # 7. Stage validé
 class AffectationStage(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
-    offer = models.ForeignKey(OffreStage, on_delete=models.CASCADE)
+    offre_stage = models.ForeignKey(OffreStage, on_delete=models.CASCADE)
     assigned_on = models.DateTimeField(auto_now_add=True)
     convention_pdf = models.FileField(upload_to='conventions/', null=True, blank=True)
     supervisor_name = models.CharField(max_length=150, null=True, blank=True)
     supervisor_email = models.EmailField(null=True, blank=True)
+    def __str__(self):
+        return f"{self.student.user.username} - {self.offre_stage.title} (Affecté le {self.assigned_on})"
 
 
 
 # 8. Évaluation finale
 class Evaluation(models.Model):
-    internship = models.OneToOneField(AffectationStage, on_delete=models.CASCADE)
+    candidature = models.OneToOneField(Candidature, null=True, blank=True, on_delete=models.CASCADE)
     score = models.IntegerField()  # de 1 à 10
     comments = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        return f"Évaluation de {self.candidature.student.user.username} pour {self.candidature.offre_stage.title} (Score: {self.score})"
+

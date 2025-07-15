@@ -71,9 +71,22 @@ class OffreStageViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 class CandidatureViewSet(viewsets.ModelViewSet):
-    queryset = Candidature.objects.all()
+    #queryset = Candidature.objects.all()
+    queryset = Candidature.objects.select_related('student', 'offre_stage', 'offre_stage__company')
+
     serializer_class = CandidatureSerializer
     permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['get'], url_path='by-student/(?P<student_id>[^/.]+)')
+    def by_student(self, request, student_id=None):
+        candidatures = self.queryset.filter(student_id=student_id)
+        serializer = self.get_serializer(candidatures, many=True)
+        return Response(serializer.data)
+    @action(detail=False, methods=['get'], url_path='by-company/(?P<company_id>[^/.]+)')
+    def by_company(self, request, company_id=None):
+        candidatures = self.queryset.filter(offre_stage__company_id=company_id)
+        serializer = self.get_serializer(candidatures, many=True)
+        return Response(serializer.data)
 
 class AffectationStageViewSet(viewsets.ModelViewSet):
     queryset = AffectationStage.objects.all()
@@ -84,6 +97,11 @@ class EvaluationViewSet(viewsets.ModelViewSet):
     queryset = Evaluation.objects.all()
     serializer_class = EvaluationSerializer
     permission_classes = [IsAuthenticated]
+    @action(detail=False, methods=['get'], url_path='by-candidature/(?P<candidature_id>[^/.]+)')
+    def by_candidature(self, request, candidature_id=None):
+        evaluations = self.queryset.filter(candidature_id=candidature_id)
+        serializer = self.get_serializer(evaluations, many=True)
+        return Response(serializer.data)
 
 class FormationViewSet(viewsets.ModelViewSet):
     queryset = Formation.objects.all()

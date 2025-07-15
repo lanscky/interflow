@@ -20,14 +20,30 @@ class CustomUserAdmin(UserAdmin):
             'fields': ('role', 'telephone','profile_picture'),
         }),
     )
+class OffreStageAdmin(admin.ModelAdmin):
+    list_display = ('id', 'title', 'company', 'start_date', 'end_date')
+    search_fields = ('title', 'company__name')
+    list_filter = ('company', 'start_date', 'end_date') 
+    ordering = ('-start_date',)
+
+class CandidatureAdmin(admin.ModelAdmin):
+    list_display = ('id', 'student', 'offre_stage', 'status', 'created_at')
+    search_fields = ('student__user__username', 'offre_stage__title')
+    list_filter = ('status', 'created_at')
+    ordering = ('-created_at',)
+    
+class CompanyAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name', 'secteur')
+    search_fields = ('name', 'secteur')
+    ordering = ('name',)   
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(Student, admin.ModelAdmin)  # Assuming StudentAdmin is not defined, using default ModelAdmin
 admin.site.register(School, admin.ModelAdmin)  # Assuming SchoolAdmin is not defined, using default ModelAdmin
 admin.site.register(SchoolUser, admin.ModelAdmin)  # Assuming SchoolUserAdmin is not defined, using default ModelAdmin
-admin.site.register(Company, admin.ModelAdmin)  # Assuming CompanyAdmin is not defined, using default ModelAdmin
+admin.site.register(Company, CompanyAdmin)  # Assuming CompanyAdmin is not defined, using default ModelAdmin
 admin.site.register(CompanyUser, admin.ModelAdmin)  # Assuming CompanyUserAdmin is not defined, using default ModelAdmin
-admin.site.register(OffreStage, admin.ModelAdmin)  # Assuming OffreStageAdmin is not defined, using default ModelAdmin
-admin.site.register(Candidature, admin.ModelAdmin)  # Assuming CandidatureAdmin is not defined, using default ModelAdmin
+admin.site.register(OffreStage, OffreStageAdmin)  # Using the defined OffreStageAdmin
+admin.site.register(Candidature, CandidatureAdmin)  # Using the defined CandidatureAdmin
 admin.site.register(AffectationStage, admin.ModelAdmin)  # Assuming AffectationStageAdmin is not defined, using default ModelAdmin
 admin.site.register(Evaluation, admin.ModelAdmin)  # Assuming EvaluationAdmin is not defined, using default ModelAdmin
 admin.site.register(Competence, admin.ModelAdmin)  # Assuming CompetenceAdmin is not defined, using default ModelAdmin
