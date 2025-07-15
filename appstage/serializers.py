@@ -42,6 +42,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             try:
                 student = Student.objects.select_related('school').get(user=user)
                 user_data["student"] = {
+                    "id_student": student.id,
                     "filiere": student.filiere,
                     "niveau": student.niveau,
                     "cv": student.cv.url if student.cv else None,
@@ -60,6 +61,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 school_user = SchoolUser.objects.select_related('school').get(user=user)
                 school = school_user.school
                 user_data["school_user"] = {
+                    "id_school_user": school_user.id,
                     "role_school": school_user.role,
                     "is_active": school_user.is_active,
                     "school": {
@@ -77,6 +79,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 company_user = CompanyUser.objects.select_related('company').get(user=user)
                 company = company_user.company
                 user_data["company_user"] = {
+                    "id_company_user": company_user.id,
                     "role_company": company_user.role,
                     "is_active": company_user.is_active,
                     "company": {

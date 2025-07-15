@@ -15,8 +15,8 @@ from rest_framework.pagination import PageNumberPagination
 # Surcharge de la methode d'authentification JWT pour inclure des informations utilisateur
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
-
-
+from rest_framework.response import Response                                                      
+from rest_framework.decorators import action                                                    
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -63,6 +63,12 @@ class OffreStageViewSet(viewsets.ModelViewSet):
     queryset = OffreStage.objects.all()
     serializer_class = OffreStageSerializer
     permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['get'], url_path='by-company/(?P<company_id>[^/.]+)')
+    def by_company(self, request, company_id=None):
+        offres = self.queryset.filter(company_id=company_id)
+        serializer = self.get_serializer(offres, many=True)
+        return Response(serializer.data)
 
 class CandidatureViewSet(viewsets.ModelViewSet):
     queryset = Candidature.objects.all()
