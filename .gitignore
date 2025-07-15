@@ -1,7 +1,7 @@
 # Ignorer les fichiers compilés Python
 __pycache__/
 *.py[cod]
-
+*.pyc
 # Ignorer les environnements virtuels
 env/
 venv/
