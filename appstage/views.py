@@ -62,7 +62,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
 class CompanyUserViewSet(viewsets.ModelViewSet):
     queryset = CompanyUser.objects.all()
     serializer_class = CompanyUserSerializer
-    permission_classes = [IsStaffPermission]
+    #permission_classes = [IsStaffPermission]
 
 class OffreStageViewSet(viewsets.ModelViewSet):
     queryset = OffreStage.objects.all()
