@@ -28,7 +28,7 @@ SECRET_KEY = "django-insecure-x@q_#0_9+(y1r9(!3@l(figysu3oyy)(=p%rap019h8qc5lf2i
 DEBUG = True
 # ALLOWED_HOSTS = []
 #DEBUG = os.environ.get("DJANGO_DEBUG", "False") == "True"
-ALLOWED_HOSTS = ['interflow.onrender.com', 'localhost', '127.0.0.1','34.204.5.59']
+ALLOWED_HOSTS = ['interflow.onrender.com', 'localhost', '127.0.0.1','34.204.5.59', 'interflow.nourtime.com']
 #ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",")
 CORS_ALLOW_ALL_ORIGINS = True
 # CORS_ALLOWED_ORIGINS = [
