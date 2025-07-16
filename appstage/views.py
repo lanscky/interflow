@@ -1,6 +1,7 @@
 # views.py
-from rest_framework import viewsets
+from rest_framework import viewsets, authentication
 from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import (
     User, Student, School, SchoolUser,
     Company, CompanyUser, OffreStage,
@@ -16,7 +17,9 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
 from rest_framework.response import Response                                                      
-from rest_framework.decorators import action                                                    
+from rest_framework.decorators import action   
+from .permissions import IsStaffPermission  
+                                               
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -37,32 +40,34 @@ class UserViewSet(viewsets.ModelViewSet):
 class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
-    permission_classes = [IsAuthenticated]
+    #authentication_classes = [JWTAuthentication]
+    #permission_classes = [IsAuthenticated]
 
 class SchoolViewSet(viewsets.ModelViewSet):
     queryset = School.objects.all()
     serializer_class = SchoolSerializer
-    permission_classes = [IsAuthenticated]
+    #authentication_classes = [JWTAuthentication]
+    permission_classes = [IsStaffPermission]
 
 class SchoolUserViewSet(viewsets.ModelViewSet):
     queryset = SchoolUser.objects.all()
     serializer_class = SchoolUserSerializer
-    permission_classes = [IsAuthenticated]
+    #permission_classes = [IsAuthenticated]
 
 class CompanyViewSet(viewsets.ModelViewSet):
     queryset = Company.objects.all()
     serializer_class = CompanySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffPermission]
 
 class CompanyUserViewSet(viewsets.ModelViewSet):
     queryset = CompanyUser.objects.all()
     serializer_class = CompanyUserSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffPermission]
 
 class OffreStageViewSet(viewsets.ModelViewSet):
     queryset = OffreStage.objects.all()
     serializer_class = OffreStageSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffPermission]
 
     @action(detail=False, methods=['get'], url_path='by-company/(?P<company_id>[^/.]+)')
     def by_company(self, request, company_id=None):
@@ -75,7 +80,7 @@ class CandidatureViewSet(viewsets.ModelViewSet):
     queryset = Candidature.objects.select_related('student', 'offre_stage', 'offre_stage__company')
 
     serializer_class = CandidatureSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffPermission]
 
     @action(detail=False, methods=['get'], url_path='by-student/(?P<student_id>[^/.]+)')
     def by_student(self, request, student_id=None):
@@ -91,12 +96,12 @@ class CandidatureViewSet(viewsets.ModelViewSet):
 class AffectationStageViewSet(viewsets.ModelViewSet):
     queryset = AffectationStage.objects.all()
     serializer_class = AffectationStageSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffPermission]
 
 class EvaluationViewSet(viewsets.ModelViewSet):
     queryset = Evaluation.objects.all()
     serializer_class = EvaluationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffPermission]
     @action(detail=False, methods=['get'], url_path='by-candidature/(?P<candidature_id>[^/.]+)')
     def by_candidature(self, request, candidature_id=None):
         evaluations = self.queryset.filter(candidature_id=candidature_id)
@@ -106,9 +111,9 @@ class EvaluationViewSet(viewsets.ModelViewSet):
 class FormationViewSet(viewsets.ModelViewSet):
     queryset = Formation.objects.all()
     serializer_class = FormationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffPermission]
 
 class CompetenceViewSet(viewsets.ModelViewSet):
     queryset = Competence.objects.all()
     serializer_class = CompetenceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffPermission]

@@ -175,6 +175,7 @@ class CompanyUserSerializer(serializers.ModelSerializer):
         return company_user
 
 class StudentSerializer(serializers.ModelSerializer):
+    #user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all()) si je souhaite juste recuperer l'id de l'utilisateur
     user = UserSerializer()
 
     class Meta:
