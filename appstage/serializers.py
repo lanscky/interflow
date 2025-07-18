@@ -28,6 +28,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         user_data = {
             "id": user.id,
             "username": user.username,
+            "prenom": user.prenom,
+            "postnom": user.postnom,
+            "telephone": user.telephone,
             "email": user.email,
             "profile_picture": user.profile_picture.url if user.profile_picture else None,
             "profile_picture_url": profile_picture_url,
@@ -109,7 +112,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'password', 'role', 'is_superuser', 'is_staff','telephone', 'profile_picture']
+        fields = ['id', 'username','postnom', 'prenom', 'email', 'password', 'role', 'is_superuser', 'is_staff','telephone', 'profile_picture']
         extra_kwargs = {
             'password': {'write_only': True},
             'is_superuser': {'write_only': True},
