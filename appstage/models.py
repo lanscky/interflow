@@ -10,6 +10,8 @@ class User(AbstractUser):
         ('school', 'École'),
         ('company', 'Entreprise'),
     )
+    postnom = models.CharField(max_length=150, blank=True, null=True)  # Optionnel
+    prenom = models.CharField(max_length=150, blank=True, null=True)  # Optionnel
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True)
     telephone = models.CharField(max_length=15, null=True, blank=True)  
