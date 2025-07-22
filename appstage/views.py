@@ -5,12 +5,13 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import (
     User, Student, School, SchoolUser,
     Company, CompanyUser, OffreStage,
-    Candidature, AffectationStage, Evaluation, Formation, Competence
+    Candidature, AffectationStage, Evaluation, Formation, Competence, CompanySubscription, SubscriptionPlan
 )
 from .serializers import (
     UserSerializer, StudentSerializer, SchoolSerializer, SchoolUserSerializer,
     CompanySerializer, CompanyUserSerializer, OffreStageSerializer,
-    CandidatureSerializer, AffectationStageSerializer, EvaluationSerializer, CustomTokenObtainPairSerializer, FormationSerializer, CompetenceSerializer
+    CandidatureSerializer, AffectationStageSerializer, EvaluationSerializer, 
+    CustomTokenObtainPairSerializer, FormationSerializer, CompetenceSerializer, CompanySubscriptionSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 # Surcharge de la methode d'authentification JWT pour inclure des informations utilisateur
@@ -20,6 +21,8 @@ from rest_framework.response import Response
 from rest_framework.decorators import action   
 from .permissions import IsStaffPermission  
                                                
+from rest_framework.exceptions import PermissionDenied
+
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -74,6 +77,32 @@ class OffreStageViewSet(viewsets.ModelViewSet):
         offres = self.queryset.filter(company_id=company_id)
         serializer = self.get_serializer(offres, many=True)
         return Response(serializer.data)
+    
+    def perform_create(self, serializer):
+        company_user = CompanyUser.objects.filter(user=self.request.user, is_active=True).first()
+
+        if company_user:
+            company = company_user.company
+            print("DEBUG - Company liée à l'utilisateur :", company)
+        else:
+            # Aucun lien avec une entreprise
+            raise PermissionDenied("Utilisateur non lié à une entreprise.") # ou autre logique selon ton auth
+        
+        try:
+            subscription = CompanySubscription.objects.get(company=company)
+        except CompanySubscription.DoesNotExist:
+            raise PermissionDenied("Aucun abonnement actif trouvé.")
+
+        if not subscription.is_active():
+            raise PermissionDenied("Votre abonnement a expiré.")
+
+        remaining = subscription.remaining_offres()
+        if remaining is not None and remaining <= 0:
+            raise PermissionDenied("Vous avez atteint la limite d'offres pour votre abonnement.")
+
+        serializer.save(company=company)
+        #return Response(serializer.data)
+
 
 class CandidatureViewSet(viewsets.ModelViewSet):
     #queryset = Candidature.objects.all()
@@ -117,3 +146,14 @@ class CompetenceViewSet(viewsets.ModelViewSet):
     queryset = Competence.objects.all()
     serializer_class = CompetenceSerializer
     permission_classes = [IsStaffPermission]
+
+class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):  # uniquement GET (list, retrieve)
+    serializer_class = CompanySubscriptionSerializer
+    permission_classes = [IsAuthenticated]
+  
+    def get_queryset(self):
+        company_user = CompanyUser.objects.filter(user=self.request.user, is_active=True).first()
+        if company_user:
+            company = company_user.company
+        # On filtre les abonnements de la compagnie de l'utilisateur connecté
+        return CompanySubscription.objects.filter(company=company)

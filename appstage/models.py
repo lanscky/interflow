@@ -2,6 +2,8 @@
 
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
+from datetime import timedelta
 
 # 1. Utilisateur générique avec rôle
 class User(AbstractUser):
@@ -19,8 +21,15 @@ class User(AbstractUser):
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True)
     telephone = models.CharField(max_length=15, null=True, blank=True)  
-    
+
     REQUIRED_FIELDS = ['username']
+
+    # @property
+    # def company(self):
+    #     try:
+    #         return self.company_user.get(is_active=True).company
+    #     except CompanyUser.DoesNotExist:
+    #         return None
 
 # 2. Profil étudiant
 class Student(models.Model):
@@ -85,7 +94,7 @@ class Company(models.Model):
     description = models.TextField()
 
 class CompanyUser(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)  # rôle "company"
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='company_user')  # rôle "company"
     company = models.ForeignKey(Company, on_delete=models.CASCADE)
     role = models.CharField(
         max_length=50,
@@ -159,3 +168,30 @@ class Evaluation(models.Model):
     def __str__(self):
         return f"Évaluation de {self.candidature.student.user.username} pour {self.candidature.offre_stage.title} (Score: {self.score})"
 
+class SubscriptionPlan(models.Model):
+    name = models.CharField(max_length=100)
+    price = models.DecimalField(max_digits=6, decimal_places=2)
+    max_offres = models.IntegerField(null=True, blank=True)  # null = illimité
+    duration_days = models.IntegerField()  # ex: 30 pour un mois
+
+    def __str__(self):
+        return f"{self.name} ({'Illimité' if self.max_offres is None else self.max_offres} offres)"
+
+
+class CompanySubscription(models.Model):
+    company = models.OneToOneField(Company, on_delete=models.CASCADE)
+    plan = models.ForeignKey(SubscriptionPlan, on_delete=models.SET_NULL, null=True)
+    start_date = models.DateTimeField(auto_now_add=True)
+    end_date = models.DateTimeField()
+
+    def is_active(self):
+        return self.end_date >= timezone.now()
+
+    def remaining_offres(self):
+        if self.plan.max_offres is None:
+            return None  # illimité
+        used = OffreStage.objects.filter(company=self.company, published_at__gte=self.start_date).count()
+        return self.plan.max_offres - used
+
+    def __str__(self):
+        return f"{self.company.name} - {self.plan.name}"
