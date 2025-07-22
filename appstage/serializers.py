@@ -1,9 +1,10 @@
 # serializers.py
+from urllib import request
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
     Student, School, SchoolUser, Company, CompanyUser,
-    OffreStage, Candidature, AffectationStage, Evaluation, Formation, Competence 
+    OffreStage, Candidature, AffectationStage, Evaluation, Formation, Competence, CompanySubscription, SubscriptionPlan
 )
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -196,6 +197,7 @@ class OffreStageSerializer(serializers.ModelSerializer):
     class Meta:
         model = OffreStage
         fields = '__all__'
+    
 
 class CandidatureSerializer(serializers.ModelSerializer):
     class Meta:
@@ -226,3 +228,17 @@ class CompetenceSerializer(serializers.ModelSerializer):
         student = validated_data.pop('student')
         competence = Competence.objects.create(student=student, **validated_data)
         return competence
+    
+class CompanySubscriptionSerializer(serializers.ModelSerializer):
+    is_active = serializers.SerializerMethodField()
+    remaining_offres = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CompanySubscription
+        fields = ['start_date', 'end_date', 'is_active', 'remaining_offres']
+
+    def get_is_active(self, obj):
+        return obj.is_active()
+
+    def get_remaining_offres(self, obj):
+        return obj.remaining_offres()    

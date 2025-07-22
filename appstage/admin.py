@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin 
 from django.contrib.auth.forms import UserCreationForm
-from .models import User, Student, School, SchoolUser, Company, CompanyUser, OffreStage, Candidature, AffectationStage, Evaluation, Competence, Formation
+from .models import User, Student, School, SchoolUser, Company,CompanyUser, OffreStage, Candidature, AffectationStage, Evaluation, Competence, Formation, CompanySubscription, SubscriptionPlan
 # Register your models here.
 
 class CustomUserAdmin(UserAdmin):
@@ -36,6 +36,10 @@ class CompanyAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'secteur')
     search_fields = ('name', 'secteur')
     ordering = ('name',)   
+class CompanySubscriptionAdmin(admin.ModelAdmin):
+    list_display = ('id', 'company', 'plan', 'start_date', 'end_date')
+    search_fields = ('company__name', 'plan__name')
+    ordering = ('-start_date',)    
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(Student, admin.ModelAdmin)  # Assuming StudentAdmin is not defined, using default ModelAdmin
 admin.site.register(School, admin.ModelAdmin)  # Assuming SchoolAdmin is not defined, using default ModelAdmin
@@ -48,3 +52,5 @@ admin.site.register(AffectationStage, admin.ModelAdmin)  # Assuming AffectationS
 admin.site.register(Evaluation, admin.ModelAdmin)  # Assuming EvaluationAdmin is not defined, using default ModelAdmin
 admin.site.register(Competence, admin.ModelAdmin)  # Assuming CompetenceAdmin is not defined, using default ModelAdmin
 admin.site.register(Formation, admin.ModelAdmin)  # Assuming FormationAdmin is not defined, using default ModelAdmin
+admin.site.register(CompanySubscription, CompanySubscriptionAdmin)  # Using the defined CompanySubscriptionAdmin
+admin.site.register(SubscriptionPlan, admin.ModelAdmin)  # Using the defined SubscriptionPlanAdmin
