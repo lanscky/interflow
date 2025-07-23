@@ -1,17 +1,17 @@
 # views.py
-from rest_framework import viewsets, authentication
+from rest_framework import viewsets, authentication,status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import (
     User, Student, School, SchoolUser,
     Company, CompanyUser, OffreStage,
-    Candidature, AffectationStage, Evaluation, Formation, Competence, CompanySubscription, SubscriptionPlan
+    Candidature, AffectationStage, Evaluation, Formation, Competence, CompanySubscription, SubscriptionPlan, Payment
 )
 from .serializers import (
     UserSerializer, StudentSerializer, SchoolSerializer, SchoolUserSerializer,
     CompanySerializer, CompanyUserSerializer, OffreStageSerializer,
     CandidatureSerializer, AffectationStageSerializer, EvaluationSerializer, 
-    CustomTokenObtainPairSerializer, FormationSerializer, CompetenceSerializer, CompanySubscriptionSerializer
+    CustomTokenObtainPairSerializer, FormationSerializer, CompetenceSerializer, CompanySubscriptionSerializer, PaymentSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 # Surcharge de la methode d'authentification JWT pour inclure des informations utilisateur
@@ -22,7 +22,9 @@ from rest_framework.decorators import action
 from .permissions import IsStaffPermission  
                                                
 from rest_framework.exceptions import PermissionDenied
-
+from rest_framework.exceptions import ValidationError
+from django.utils import timezone
+from datetime import timedelta
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -157,3 +159,87 @@ class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):  # uniquement GET (lis
             company = company_user.company
         # On filtre les abonnements de la compagnie de l'utilisateur connecté
         return CompanySubscription.objects.filter(company=company)
+
+class CompanySubscriptionViewSet(viewsets.ModelViewSet):
+    serializer_class = CompanySubscriptionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        company_user = CompanyUser.objects.filter(user=self.request.user, is_active=True).first()
+        if user.role != 'company':
+            return CompanySubscription.objects.none()
+        print("DEBUG - CompanyUser:", company_user.company)
+        return CompanySubscription.objects.filter(company=company_user.company)
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        company_user = CompanyUser.objects.filter(user=self.request.user, is_active=True).first()
+        if user.role != 'company':
+            raise ValidationError("Seules les entreprises peuvent souscrire à un abonnement.")
+
+        # Récupère la company liée au user
+        try:
+            company = company_user.company
+        except AttributeError:
+            raise ValidationError("Aucune entreprise associée à ce compte.")
+
+        # Vérifie si la company a déjà un abonnement actif
+        if CompanySubscription.objects.filter(company=company, end_date__gte=timezone.now()).exists():
+            raise ValidationError("Vous avez déjà un abonnement actif. Veuillez le renouveler.")
+        if CompanySubscription.objects.filter(company=company).exists():
+            raise ValidationError("Veuillez le renouveler au lieu d'en créer un nouveau.")
+        plan_id = self.request.data.get("plan_id")
+        try:
+            plan = SubscriptionPlan.objects.get(id=plan_id)
+        except SubscriptionPlan.DoesNotExist:
+            raise ValidationError("Plan d'abonnement invalide.")
+
+        # Calcul de la date de fin (exemple : 30 jours)
+        end_date = timezone.now() + timedelta(days=30)
+
+        serializer.save(company=company, plan=plan, end_date=end_date)
+
+    def update(self, request, *args, **kwargs):
+        """Renouveler ou changer le plan"""
+        instance = self.get_object()
+        plan_id = request.data.get("plan_id")
+
+        if plan_id:
+            try:
+                new_plan = SubscriptionPlan.objects.get(id=plan_id)
+                instance.plan = new_plan
+            except SubscriptionPlan.DoesNotExist:
+                raise ValidationError("Plan invalide.")
+
+        # Prolonger la date de fin (exemple : +30 jours)
+        instance.end_date += timedelta(days=30)
+        instance.save()
+
+        return Response(self.get_serializer(instance).data)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response({"error": "Suppression non autorisée."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+
+class  PaymentViewSet(viewsets.ModelViewSet):
+    queryset = Payment.objects.all()
+    serializer_class = PaymentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role != 'company':
+            return Payment.objects.none()
+        company_user = CompanyUser.objects.filter(user=user, is_active=True).first()
+        if not company_user:
+            return Payment.objects.none()
+        return Payment.objects.filter(company=company_user.company)
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        company_user = CompanyUser.objects.filter(user=user, is_active=True).first()
+        if not company_user:
+            raise ValidationError("Aucune entreprise associée à ce compte.")
+        
+        serializer.save(company=company_user.company)

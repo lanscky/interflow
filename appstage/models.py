@@ -195,3 +195,13 @@ class CompanySubscription(models.Model):
 
     def __str__(self):
         return f"{self.company.name} - {self.plan.name}"
+    
+
+class Payment(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    transaction_id = models.CharField(max_length=255)
+    status = models.CharField(max_length=20, choices=[('pending', 'En attente'), ('success', 'Succès'), ('failed', 'Échoué')])
+    created_at = models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        return f"Paiement de {self.company.name} - {self.amount}€ ({self.status})"

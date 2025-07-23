@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin 
 from django.contrib.auth.forms import UserCreationForm
-from .models import User, Student, School, SchoolUser, Company,CompanyUser, OffreStage, Candidature, AffectationStage, Evaluation, Competence, Formation, CompanySubscription, SubscriptionPlan
+from .models import User, Student, School, SchoolUser, Company,CompanyUser, OffreStage, Candidature, AffectationStage, Evaluation, Competence, Formation, CompanySubscription, SubscriptionPlan, Payment
 # Register your models here.
 
 class CustomUserAdmin(UserAdmin):
@@ -39,7 +39,16 @@ class CompanyAdmin(admin.ModelAdmin):
 class CompanySubscriptionAdmin(admin.ModelAdmin):
     list_display = ('id', 'company', 'plan', 'start_date', 'end_date')
     search_fields = ('company__name', 'plan__name')
-    ordering = ('-start_date',)    
+    ordering = ('-start_date',) 
+class SubscriptionPlanAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name', 'duration_days', 'max_offres','price')
+    search_fields = ('name',)
+    ordering = ('-id',)  
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = ('id', 'company', 'amount', 'transaction_id', 'status', 'created_at')
+    search_fields = ('company__name', 'transaction_id')
+    list_filter = ('status', 'created_at')
+    ordering = ('-created_at',) 
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(Student, admin.ModelAdmin)  # Assuming StudentAdmin is not defined, using default ModelAdmin
 admin.site.register(School, admin.ModelAdmin)  # Assuming SchoolAdmin is not defined, using default ModelAdmin
@@ -53,4 +62,5 @@ admin.site.register(Evaluation, admin.ModelAdmin)  # Assuming EvaluationAdmin is
 admin.site.register(Competence, admin.ModelAdmin)  # Assuming CompetenceAdmin is not defined, using default ModelAdmin
 admin.site.register(Formation, admin.ModelAdmin)  # Assuming FormationAdmin is not defined, using default ModelAdmin
 admin.site.register(CompanySubscription, CompanySubscriptionAdmin)  # Using the defined CompanySubscriptionAdmin
-admin.site.register(SubscriptionPlan, admin.ModelAdmin)  # Using the defined SubscriptionPlanAdmin
+admin.site.register(SubscriptionPlan, SubscriptionPlanAdmin)  # Using the defined SubscriptionPlanAdmin
+admin.site.register(Payment, PaymentAdmin)  # Using the defined PaymentAdmin
