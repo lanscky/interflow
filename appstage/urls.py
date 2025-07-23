@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     UserViewSet, StudentViewSet, SchoolViewSet, SchoolUserViewSet,
     CompanyViewSet, CompanyUserViewSet, OffreStageViewSet,
-    CandidatureViewSet, AffectationStageViewSet, EvaluationViewSet, FormationViewSet, CompetenceViewSet,SubscriptionViewSet
+    CandidatureViewSet, AffectationStageViewSet, EvaluationViewSet, FormationViewSet, CompetenceViewSet,SubscriptionViewSet,CompanySubscriptionViewSet,PaymentViewSet
 )
 
 router = DefaultRouter()
@@ -20,6 +20,8 @@ router.register(r'evaluations', EvaluationViewSet)
 router.register(r'formations', FormationViewSet)
 router.register(r'competences', CompetenceViewSet)
 router.register(r'subscription', SubscriptionViewSet, basename='subscription')
+router.register(r'company-subscriptions', CompanySubscriptionViewSet, basename='company-subscription')
+router.register(r'payments', PaymentViewSet, basename='payment')
 
 urlpatterns = [
     path('', include(router.urls)),
