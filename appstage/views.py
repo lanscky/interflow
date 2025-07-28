@@ -21,10 +21,10 @@ from rest_framework.response import Response
 from rest_framework.decorators import action   
 from .permissions import IsStaffPermission  
                                                
-from rest_framework.exceptions import PermissionDenied
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError, APIException
 from django.utils import timezone
 from datetime import timedelta
+
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
@@ -70,7 +70,7 @@ class CompanyUserViewSet(viewsets.ModelViewSet):
     #permission_classes = [IsStaffPermission]
 
 class OffreStageViewSet(viewsets.ModelViewSet):
-    queryset = OffreStage.objects.all()
+    queryset = OffreStage.objects.all().order_by('-id')
     serializer_class = OffreStageSerializer
     permission_classes = [IsStaffPermission]
 
@@ -88,19 +88,19 @@ class OffreStageViewSet(viewsets.ModelViewSet):
             print("DEBUG - Company liée à l'utilisateur :", company)
         else:
             # Aucun lien avec une entreprise
-            raise PermissionDenied("Utilisateur non lié à une entreprise.") # ou autre logique selon ton auth
-        
+            raise APIException(detail={"error": "Utilisateur non lié à une entreprise."}, code=status.HTTP_403_FORBIDDEN)
+
         try:
             subscription = CompanySubscription.objects.get(company=company)
         except CompanySubscription.DoesNotExist:
-            raise PermissionDenied("Aucun abonnement actif trouvé.")
+            raise APIException(detail={"error": "Aucun abonnement actif trouvé."}, code=status.HTTP_403_FORBIDDEN)
 
         if not subscription.is_active():
-            raise PermissionDenied("Votre abonnement a expiré.")
+            raise APIException(detail={"error": "Votre abonnement a expiré."}, code=status.HTTP_403_FORBIDDEN)
 
         remaining = subscription.remaining_offres()
         if remaining is not None and remaining <= 0:
-            raise PermissionDenied("Vous avez atteint la limite d'offres pour votre abonnement.")
+            raise APIException(detail={"error": "Vous avez atteint la limite d'offres pour votre abonnement."}, code=status.HTTP_403_FORBIDDEN)
 
         serializer.save(company=company)
         #return Response(serializer.data)
@@ -176,24 +176,24 @@ class CompanySubscriptionViewSet(viewsets.ModelViewSet):
         user = self.request.user
         company_user = CompanyUser.objects.filter(user=self.request.user, is_active=True).first()
         if user.role != 'company':
-            raise ValidationError("Seules les entreprises peuvent souscrire à un abonnement.")
+            raise APIException(detail={"error": "Seules les entreprises peuvent souscrire à un abonnement."}, code=status.HTTP_403_FORBIDDEN)
 
         # Récupère la company liée au user
         try:
             company = company_user.company
         except AttributeError:
-            raise ValidationError("Aucune entreprise associée à ce compte.")
+            raise APIException(detail={"error": "Seules les entreprises peuvent souscrire à un abonnement."}, code=status.HTTP_403_FORBIDDEN)   
 
         # Vérifie si la company a déjà un abonnement actif
         if CompanySubscription.objects.filter(company=company, end_date__gte=timezone.now()).exists():
-            raise ValidationError("Vous avez déjà un abonnement actif. Veuillez le renouveler.")
+            raise APIException(detail={"error": "Vous avez déjà un abonnement actif. Veuillez le renouveler."}, code=status.HTTP_400_BAD_REQUEST)
         if CompanySubscription.objects.filter(company=company).exists():
-            raise ValidationError("Veuillez le renouveler au lieu d'en créer un nouveau.")
+            raise APIException(detail={"error": "Veuillez le renouveler au lieu d'en créer un nouveau."}, code=status.HTTP_400_BAD_REQUEST)
         plan_id = self.request.data.get("plan_id")
         try:
             plan = SubscriptionPlan.objects.get(id=plan_id)
         except SubscriptionPlan.DoesNotExist:
-            raise ValidationError("Plan d'abonnement invalide.")
+            raise APIException(detail={"error": "Plan d'abonnement invalide."}, code=status.HTTP_400_BAD_REQUEST)
 
         # Calcul de la date de fin (exemple : 30 jours)
         end_date = timezone.now() + timedelta(days=30)
@@ -210,7 +210,7 @@ class CompanySubscriptionViewSet(viewsets.ModelViewSet):
                 new_plan = SubscriptionPlan.objects.get(id=plan_id)
                 instance.plan = new_plan
             except SubscriptionPlan.DoesNotExist:
-                raise ValidationError("Plan invalide.")
+                raise APIException(detail={"error": "Plan invalide."}, code=status.HTTP_400_BAD_REQUEST)
 
         # Prolonger la date de fin (exemple : +30 jours)
         instance.end_date += timedelta(days=30)
