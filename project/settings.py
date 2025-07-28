@@ -30,14 +30,25 @@ ALLOWED_HOSTS = ["*"]  # Change this to your domain or IP in production
 #DEBUG = os.environ.get("DJANGO_DEBUG", "False") == "True"
 #ALLOWED_HOSTS = ['interflow.onrender.com', 'localhost', '127.0.0.1','34.204.5.59', 'interflow.nourtime.com']
 #ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",")
-CORS_ALLOW_ALL_ORIGINS = True
-# CORS_ALLOWED_ORIGINS = [
-#     "https://localhost:3000",
-#     "http://localhost:3000",
-# ]
+#CORS_ALLOW_ALL_ORIGINS = True
 
+# Exceptionnel pour https
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+#Fin exception
+CSRF_TRUSTED_ORIGINS = [
+    "https://interflow.nourtime.com",
+    "http://localhost:8000",
+    "http://localhost:3000",
+    "https://next-luka.vercel.app",
+]
+CORS_ALLOWED_ORIGINS = [
+    "https://next-luka.vercel.app",
+    "http://localhost:3000",
+    "https://interflow.nourtime.com",
+]
 CORS_ALLOW_CREDENTIALS = True
-# Application definition
+# Application definition 
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -118,28 +129,28 @@ WSGI_APPLICATION = "project.wsgi.application"
 
 # The `DATABASES` setting in Django is a dictionary that defines the configuration for database
 # connections. In this specific configuration:
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': os.environ.get('DB_NAME', 'appstage'),
-#         'USER': os.environ.get('DB_USER', 'admin_django'), #  admin_django
-#         'PASSWORD': os.environ.get('DB_PASSWORD', 'Admin@2015'), # Admin@2015
-#         'HOST': os.environ.get('DB_HOST', 'localhost'), # 127.0.0.1
-#         'PORT': os.environ.get('DB_PORT', '5432'),
-#     }
-# }
-
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv("POSTGRES_DB"),
-        'USER': os.getenv("POSTGRES_USER"),
-        'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
-        'HOST': 'db',
-        'PORT': '5432',
+        'NAME': os.environ.get('DB_NAME', 'appstage'),
+        'USER': os.environ.get('DB_USER', 'admin_django'), #  admin_django
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'Admin@2015'), # Admin@2015
+        'HOST': os.environ.get('DB_HOST', 'localhost'), # 127.0.0.1
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
+
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': os.getenv("POSTGRES_DB"),
+#         'USER': os.getenv("POSTGRES_USER"),
+#         'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
+#         'HOST': 'db',
+#         'PORT': '5432',
+#     }
+# }
 
 
 SWAGGER_SETTINGS = {
