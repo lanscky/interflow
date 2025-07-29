@@ -143,11 +143,21 @@ class FormationViewSet(viewsets.ModelViewSet):
     queryset = Formation.objects.all()
     serializer_class = FormationSerializer
     permission_classes = [IsStaffPermission]
+    @action(detail=False, methods=['get'], url_path='by-student/(?P<student_id>[^/.]+)')
+    def by_student(self, request, student_id=None):
+        formations = self.queryset.filter(student_id=student_id)
+        serializer = self.get_serializer(formations, many=True)
+        return Response(serializer.data)
 
 class CompetenceViewSet(viewsets.ModelViewSet):
     queryset = Competence.objects.all()
     serializer_class = CompetenceSerializer
     permission_classes = [IsStaffPermission]
+    @action(detail=False, methods=['get'], url_path='by-student/(?P<student_id>[^/.]+)')
+    def by_student(self, request, student_id=None):
+        competences = self.queryset.filter(student_id=student_id)
+        serializer = self.get_serializer(competences, many=True)
+        return Response(serializer.data)
 
 class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):  # uniquement GET (list, retrieve)
     serializer_class = CompanySubscriptionSerializer
@@ -241,5 +251,22 @@ class  PaymentViewSet(viewsets.ModelViewSet):
         company_user = CompanyUser.objects.filter(user=user, is_active=True).first()
         if not company_user:
             raise ValidationError("Aucune entreprise associée à ce compte.")
-        
         serializer.save(company=company_user.company)
+
+    @action(detail=False, methods=['get'], url_path='by-company')
+    def by_company(self, request):
+        user = self.request.user
+        print("DEBUG - User role:", user.role)
+        if user.role != 'company':
+            return Response({"error": "Ahh Accès non autorisé."}, status=status.HTTP_403_FORBIDDEN)
+        
+        company_user = CompanyUser.objects.filter(user=user, is_active=True).first()
+        if not company_user:
+            return Response({"error": "Aucune entreprise associée à ce compte."}, status=status.HTTP_403_FORBIDDEN)
+        # if company_user.company.id != company_id:
+        #     return Response({"error": "Accès non autorisé."}, status=status.HTTP_403_FORBIDDEN)
+        payments = self.get_queryset().filter(company=company_user.company)
+        serializer = self.get_serializer(payments, many=True)
+        return Response(serializer.data)
+
+        
