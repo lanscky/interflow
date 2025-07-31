@@ -207,8 +207,12 @@ class CompanySubscriptionViewSet(viewsets.ModelViewSet):
 
         # Calcul de la date de fin (exemple : 30 jours)
         end_date = timezone.now() + timedelta(days=30)
+        if plan.max_offres is None:
+            nbre_offres = None
+        else:   
+            nbre_offres = plan.max_offres  # Nombre d'offres 
 
-        serializer.save(company=company, plan=plan, end_date=end_date)
+        serializer.save(company=company, plan=plan, end_date=end_date, nbre_offres=nbre_offres)
 
     def update(self, request, *args, **kwargs):
         """Renouveler ou changer le plan"""
@@ -218,12 +222,29 @@ class CompanySubscriptionViewSet(viewsets.ModelViewSet):
         if plan_id:
             try:
                 new_plan = SubscriptionPlan.objects.get(id=plan_id)
-                instance.plan = new_plan
             except SubscriptionPlan.DoesNotExist:
                 raise APIException(detail={"error": "Plan invalide."}, code=status.HTTP_400_BAD_REQUEST)
+            
+        # Vérifier si l'abonnement actuel est actif
+        is_active = instance.end_date >= timezone.now()
+        if is_active:
+            current_is_unlimited = instance.plan.max_offres is None
+            new_is_unlimited = new_plan.max_offres is None
+            if not current_is_unlimited and new_is_unlimited:
+                # Si l'abonnement actuel n'est pas illimité mais le nouveau l'est, on ne change pas le nombre d'offres
+                raise APIException(detail={"error": "Impossible de passer à illimité avant l'expiration de votre plan actuel."}, code=status.HTTP_400_BAD_REQUEST)
+            # Passage illimité → limité
+            if current_is_unlimited and not new_is_unlimited:
+                raise APIException(detail={"error": "Impossible de rétrograder à un plan limité avant l'expiration de votre plan actuel."}, code=status.HTTP_400_BAD_REQUEST)
 
+        instance.plan = new_plan
         # Prolonger la date de fin (exemple : +30 jours)
         instance.end_date += timedelta(days=30)
+
+        if new_plan.max_offres is not None:
+            instance.nbre_offres += new_plan.max_offres
+        else:
+            instance.nbre_offres = None
         instance.save()
 
         return Response(self.get_serializer(instance).data)

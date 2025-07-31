@@ -235,8 +235,8 @@ class CompanySubscriptionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CompanySubscription
-        fields = ['start_date', 'end_date', 'is_active', 'remaining_offres', 'plan']
-        read_only_fields = ['start_date', 'end_date', 'is_active', 'remaining_offres']
+        fields = ['id', 'start_date', 'end_date', 'is_active', 'remaining_offres', 'plan']
+        read_only_fields = ['start_date', 'end_date', 'is_active', 'remaining_offres','nbre_offres']
 
     def get_is_active(self, obj):
         return obj.is_active()

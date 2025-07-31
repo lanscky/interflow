@@ -48,7 +48,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://interflow.nourtime.com",
 ]
 CORS_ALLOW_CREDENTIALS = True
-# Application definition 
+# Application definition
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -139,7 +139,6 @@ DATABASES = {
         'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
-
 
 # DATABASES = {
 #     'default': {
