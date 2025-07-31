@@ -183,15 +183,16 @@ class CompanySubscription(models.Model):
     plan = models.ForeignKey(SubscriptionPlan, on_delete=models.SET_NULL, null=True)
     start_date = models.DateTimeField(auto_now_add=True)
     end_date = models.DateTimeField()
+    nbre_offres = models.IntegerField(default=0, null=True, blank=True)  # Nombre d'offres utilisées
 
     def is_active(self):
         return self.end_date >= timezone.now()
 
     def remaining_offres(self):
-        if self.plan.max_offres is None:
+        if self.nbre_offres is None:
             return None  # illimité
         used = OffreStage.objects.filter(company=self.company, published_at__gte=self.start_date).count()
-        return self.plan.max_offres - used
+        return self.nbre_offres - used
 
     def __str__(self):
         return f"{self.company.name} - {self.plan.name}"
