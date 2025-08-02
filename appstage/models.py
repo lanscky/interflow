@@ -185,6 +185,10 @@ class CompanySubscription(models.Model):
     end_date = models.DateTimeField()
     nbre_offres = models.IntegerField(default=0, null=True, blank=True)  # Nombre d'offres utilisées
 
+    # Nouveau champ pour plan futur
+    next_plan = models.ForeignKey(SubscriptionPlan, on_delete=models.SET_NULL, null=True, blank=True, related_name='future_subscriptions')
+    change_effective_date = models.DateTimeField(null=True, blank=True)
+
     def is_active(self):
         return self.end_date >= timezone.now()
 
@@ -193,10 +197,12 @@ class CompanySubscription(models.Model):
             return None  # illimité
         used = OffreStage.objects.filter(company=self.company, published_at__gte=self.start_date).count()
         return self.nbre_offres - used
-
-    def __str__(self):
-        return f"{self.company.name} - {self.plan.name}"
     
+    def __str__(self):
+        company_name = self.company.name if self.company else "Aucune entreprise"
+        plan_name = self.plan.name if self.plan else "Aucun plan"
+        return f"{company_name} - {plan_name}"
+
 
 class Payment(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE)

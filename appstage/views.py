@@ -11,7 +11,7 @@ from .serializers import (
     UserSerializer, StudentSerializer, SchoolSerializer, SchoolUserSerializer,
     CompanySerializer, CompanyUserSerializer, OffreStageSerializer,
     CandidatureSerializer, AffectationStageSerializer, EvaluationSerializer, 
-    CustomTokenObtainPairSerializer, FormationSerializer, CompetenceSerializer, CompanySubscriptionSerializer, PaymentSerializer
+    CustomTokenObtainPairSerializer, FormationSerializer, CompetenceSerializer, CompanySubscriptionSerializer, PaymentSerializer, SubscriptionPlanSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 # Surcharge de la methode d'authentification JWT pour inclure des informations utilisateur
@@ -160,15 +160,18 @@ class CompetenceViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):  # uniquement GET (list, retrieve)
-    serializer_class = CompanySubscriptionSerializer
-    permission_classes = [IsAuthenticated]
+    queryset = SubscriptionPlan.objects.all()
+    serializer_class = SubscriptionPlanSerializer
+
+    # serializer_class = CompanySubscriptionSerializer
+    # permission_classes = [IsAuthenticated]
   
-    def get_queryset(self):
-        company_user = CompanyUser.objects.filter(user=self.request.user, is_active=True).first()
-        if company_user:
-            company = company_user.company
-        # On filtre les abonnements de la compagnie de l'utilisateur connecté
-        return CompanySubscription.objects.filter(company=company)
+    # def get_queryset(self):
+    #     company_user = CompanyUser.objects.filter(user=self.request.user, is_active=True).first()
+    #     if company_user:
+    #         company = company_user.company
+    #     # On filtre les abonnements de la compagnie de l'utilisateur connecté
+    #     return CompanySubscription.objects.filter(company=company)
 
 class CompanySubscriptionViewSet(viewsets.ModelViewSet):
     serializer_class = CompanySubscriptionSerializer
@@ -215,40 +218,72 @@ class CompanySubscriptionViewSet(viewsets.ModelViewSet):
         serializer.save(company=company, plan=plan, end_date=end_date, nbre_offres=nbre_offres)
 
     def update(self, request, *args, **kwargs):
-        """Renouveler ou changer le plan"""
+        """Changer ou renouveler l'abonnement"""
         instance = self.get_object()
         plan_id = request.data.get("plan_id")
 
-        if plan_id:
-            try:
-                new_plan = SubscriptionPlan.objects.get(id=plan_id)
-            except SubscriptionPlan.DoesNotExist:
-                raise APIException(detail={"error": "Plan invalide."}, code=status.HTTP_400_BAD_REQUEST)
-            
-        # Vérifier si l'abonnement actuel est actif
-        is_active = instance.end_date >= timezone.now()
+        if not plan_id:
+            raise APIException(detail={"error": "Plan requis."}, code=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            new_plan = SubscriptionPlan.objects.get(id=plan_id)
+        except SubscriptionPlan.DoesNotExist:
+            raise APIException(detail={"error": "Plan invalide."}, code=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ Empêcher plusieurs changements planifiés
+        if instance.next_plan:
+            raise APIException(detail={
+                "error": f"Un changement vers '{instance.next_plan.name}' est déjà programmé pour le {instance.change_effective_date}."
+            }, code=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ Vérifier si abonnement actif
+        is_active = instance.is_active()
+        remaining = instance.remaining_offres()  # None si illimité
+
         if is_active:
-            current_is_unlimited = instance.plan.max_offres is None
-            new_is_unlimited = new_plan.max_offres is None
-            if not current_is_unlimited and new_is_unlimited:
-                # Si l'abonnement actuel n'est pas illimité mais le nouveau l'est, on ne change pas le nombre d'offres
-                raise APIException(detail={"error": "Impossible de passer à illimité avant l'expiration de votre plan actuel."}, code=status.HTTP_400_BAD_REQUEST)
-            # Passage illimité → limité
-            if current_is_unlimited and not new_is_unlimited:
-                raise APIException(detail={"error": "Impossible de rétrograder à un plan limité avant l'expiration de votre plan actuel."}, code=status.HTTP_400_BAD_REQUEST)
+            # ✅ Cas illimité ou limité avec offres restantes → planifier
+            if remaining is None or remaining > 0:
+                instance.next_plan = new_plan
+                instance.change_effective_date = instance.end_date
+                instance.save()
+                return Response({
+                    "status": "scheduled",
+                    "message": f"Le changement vers '{new_plan.name}' sera appliqué à partir du {instance.end_date}.",
+                    "subscription": self.get_serializer(instance).data
+                })
 
+            # ✅ Cas limité avec 0 offres → appliquer immédiatement
+            if remaining <= 0:
+                instance.plan = new_plan
+                instance.start_date = timezone.now()
+                instance.end_date = timezone.now() + timedelta(days=new_plan.duration_days)
+                instance.nbre_offres = None if new_plan.max_offres is None else new_plan.max_offres
+                instance.next_plan = None
+                instance.change_effective_date = None
+                instance.save()
+                return Response({
+                    "status": "applied",
+                    "message": f"Le plan '{new_plan.name}' a été appliqué immédiatement (car plus aucune offre disponible).",
+                    "subscription": self.get_serializer(instance).data
+                })
+
+        # ✅ Cas abonnement expiré → appliquer immédiatement
         instance.plan = new_plan
-        # Prolonger la date de fin (exemple : +30 jours)
-        instance.end_date += timedelta(days=30)
-
-        if new_plan.max_offres is not None:
-            instance.nbre_offres += new_plan.max_offres
-        else:
-            instance.nbre_offres = None
+        instance.start_date = timezone.now()
+        instance.end_date = timezone.now() + timedelta(days=new_plan.duration_days)
+        instance.nbre_offres = None if new_plan.max_offres is None else new_plan.max_offres
+        instance.next_plan = None
+        instance.change_effective_date = None
         instance.save()
 
-        return Response(self.get_serializer(instance).data)
+        return Response({
+            "status": "applied",
+            "message": f"Le plan '{new_plan.name}' a été appliqué immédiatement (abonnement expiré).",
+            "subscription": self.get_serializer(instance).data
+        })
 
+
+    
     def destroy(self, request, *args, **kwargs):
         return Response({"error": "Suppression non autorisée."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
@@ -289,5 +324,3 @@ class  PaymentViewSet(viewsets.ModelViewSet):
         payments = self.get_queryset().filter(company=company_user.company)
         serializer = self.get_serializer(payments, many=True)
         return Response(serializer.data)
-
-        

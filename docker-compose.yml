@@ -5,16 +5,18 @@ services:
     build: .
     container_name: interflow_app
     command: gunicorn project.wsgi:application --bind 0.0.0.0:8000
+    #command: /start.sh
     volumes:
       - .:/app
     # expose:
     #   - "8000":
-    # ports:
-    #   - "8080:8000"
+    ports:
+      - "8000:8000"
     env_file:
       - .env
     depends_on:
       - db
+      - redis
 
   db:
     image: postgres:15
@@ -25,6 +27,44 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  redis:
+    image: redis:7
+    container_name: redis_broker
+    ports:
+      - "6379:6379"
+
+  celery:
+    build: .
+    container_name: celery_worker
+    command: celery -A project worker --loglevel=info
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - db
+      - web
+  celery_worker:
+    build: .
+    command: celery -A project worker -l info
+    volumes:
+      - .:/app
+    depends_on:
+      - web
+      - redis
+  celery-beat:
+    build: .
+    container_name: celery_beat
+    command: celery -A project beat --loglevel=info
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - db
+      - web
   nginx:
     image: nginx:latest
     container_name: nginx_reverse_proxy
@@ -39,7 +79,16 @@ services:
       # - certbot-www:/var/www/certbot
     depends_on:
       - web
-
+  flower:
+    image: mher/flower
+    container_name: flower_monitor
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery_worker
   certbot:
     image: certbot/certbot
     container_name: certbot

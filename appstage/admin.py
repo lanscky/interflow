@@ -37,7 +37,7 @@ class CompanyAdmin(admin.ModelAdmin):
     search_fields = ('name', 'secteur')
     ordering = ('name',)   
 class CompanySubscriptionAdmin(admin.ModelAdmin):
-    list_display = ('id', 'company', 'plan', 'start_date', 'end_date')
+    list_display = ('id', 'company', 'plan', 'start_date', 'end_date','nbre_offres', 'next_plan', 'change_effective_date')
     search_fields = ('company__name', 'plan__name')
     ordering = ('-start_date',) 
 class SubscriptionPlanAdmin(admin.ModelAdmin):

@@ -235,7 +235,7 @@ class CompanySubscriptionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CompanySubscription
-        fields = ['id', 'start_date', 'end_date', 'is_active', 'remaining_offres', 'plan']
+        fields = ['id', 'start_date', 'end_date', 'is_active', 'remaining_offres', 'plan','nbre_offres']
         read_only_fields = ['start_date', 'end_date', 'is_active', 'remaining_offres','nbre_offres']
 
     def get_is_active(self, obj):
@@ -252,4 +252,9 @@ class PaymentSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         payment = Payment.objects.create(**validated_data)
-        return payment
+        return 
+class SubscriptionPlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubscriptionPlan
+        fields = ['id', 'name', 'price', 'max_offres', 'duration_days']
+        read_only_fields = ['*']
