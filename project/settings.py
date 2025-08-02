@@ -40,12 +40,14 @@ CSRF_TRUSTED_ORIGINS = [
     "https://interflow.nourtime.com",
     "http://localhost:8000",
     "http://localhost:3000",
-    "https://next-luka.vercel.app",
+    "https://totinda.vercel.app",
+    "https://totinda.com",
 ]
 CORS_ALLOWED_ORIGINS = [
-    "https://next-luka.vercel.app",
+    "https://totinda.vercel.app",
     "http://localhost:3000",
     "https://interflow.nourtime.com",
+    "https://totinda.com",
 ]
 CORS_ALLOW_CREDENTIALS = True
 # Application definition
@@ -62,8 +64,17 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'drf_yasg',
     'corsheaders',
+    'django_crontab',
+    'django_celery_beat',
+    'django_celery_results',
     #'django_extensions',
 ]
+# Cron jobs configuration
+CRONJOBS = [
+    # format : (schedule, command)
+    ('0 0 * * *', 'appstage.cron.activate_next_plan', '>> /tmp/mycron.log 2>&1'),  # Tous les jours à minuit
+]
+
 #JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'd9ZKYd7VNH7DAAOvOc1dseHcNkEq1Ntm_W63bnekTy11uX3rTpdt42O6Q9PcgvKibfookGdvoQS5_KNW9TSAIg')
 SIMPLE_JWT = {
     #"SIGNING_KEY": JWT_SECRET_KEY,
@@ -129,27 +140,27 @@ WSGI_APPLICATION = "project.wsgi.application"
 
 # The `DATABASES` setting in Django is a dictionary that defines the configuration for database
 # connections. In this specific configuration:
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'appstage'),
-        'USER': os.environ.get('DB_USER', 'admin_django'), #  admin_django
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'Admin@2015'), # Admin@2015
-        'HOST': os.environ.get('DB_HOST', 'localhost'), # 127.0.0.1
-        'PORT': os.environ.get('DB_PORT', '5432'),
-    }
-}
-
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': os.getenv("POSTGRES_DB"),
-#         'USER': os.getenv("POSTGRES_USER"),
-#         'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
-#         'HOST': 'db',
-#         'PORT': '5432',
+#         'NAME': os.environ.get('DB_NAME', 'appstage'),
+#         'USER': os.environ.get('DB_USER', 'admin_django'), #  admin_django
+#         'PASSWORD': os.environ.get('DB_PASSWORD', 'Admin@2015'), # Admin@2015
+#         'HOST': os.environ.get('DB_HOST', 'localhost'), # 127.0.0.1
+#         'PORT': os.environ.get('DB_PORT', '5432'),
 #     }
 # }
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv("POSTGRES_DB"),
+        'USER': os.getenv("POSTGRES_USER"),
+        'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
+        'HOST': 'db',
+        'PORT': '5432',
+    }
+}
 
 
 SWAGGER_SETTINGS = {
@@ -185,7 +196,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "UTC"
+TIME_ZONE = "Africa/Kinshasa"
 
 USE_I18N = True
 
@@ -204,3 +215,12 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+# configuration celery
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = 'django-db'
+#CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Africa/Kinshasa'
