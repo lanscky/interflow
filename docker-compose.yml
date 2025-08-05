@@ -8,6 +8,8 @@ services:
     #command: /start.sh
     volumes:
       - .:/app
+      - media_data:/app/media
+      - static_data:/app/static
     # expose:
     #   - "8000":
     ports:
@@ -75,6 +77,8 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
+      - media_data:/app/media
+      - static_data:/app/static
       # - certbot-etc:/etc/letsencrypt
       # - certbot-www:/var/www/certbot
     depends_on:
@@ -84,11 +88,15 @@ services:
     container_name: flower_monitor
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - FLOWER_BASIC_AUTH=${FLOWER_BASIC_AUTH}
+
+
     ports:
-      - "5555:5555"
+      - "8080:5555"
     depends_on:
       - redis
       - celery_worker
+
   certbot:
     image: certbot/certbot
     container_name: certbot
@@ -106,6 +114,8 @@ volumes:
   postgres_data:
   certbot-etc:
   certbot-www:
+  media_data:
+  static_data:
 
 
 #Démarre tous les services sauf certbot :

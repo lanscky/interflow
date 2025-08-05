@@ -4,7 +4,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
     Student, School, SchoolUser, Company, CompanyUser,
-    OffreStage, Candidature, AffectationStage, Evaluation, Formation, Competence, CompanySubscription, SubscriptionPlan, Payment
+    OffreStage, Candidature, AffectationStage, Evaluation, Formation, Competence, CompanySubscription, SubscriptionPlan, Payment, Config
 )
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -258,3 +258,12 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
         model = SubscriptionPlan
         fields = ['id', 'name', 'price', 'max_offres', 'duration_days']
         read_only_fields = ['*']
+
+class ConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Config
+        fields = [
+            'id', 'site_name', 'logo', 'homepage_banner',
+            'contact_email', 'phone_number',
+            'facebook_link', 'twitter_link', 'linkedin_link', 'updated_at'
+        ]

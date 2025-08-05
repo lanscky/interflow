@@ -23,4 +23,4 @@ platforms.C_FORCE_ROOT = True
 #     },
 # }
 
-app.conf.timezone = 'Africa/Kinshasa'
+#app.conf.timezone = 'Africa/Kinshasa'

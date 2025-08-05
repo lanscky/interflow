@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin 
 from django.contrib.auth.forms import UserCreationForm
-from .models import User, Student, School, SchoolUser, Company,CompanyUser, OffreStage, Candidature, AffectationStage, Evaluation, Competence, Formation, CompanySubscription, SubscriptionPlan, Payment
+from .models import User, Student, School, SchoolUser, Company,CompanyUser, OffreStage, Candidature, AffectationStage, Evaluation, Competence, Formation, CompanySubscription, SubscriptionPlan, Payment, Config
 # Register your models here.
 
 class CustomUserAdmin(UserAdmin):
@@ -64,3 +64,4 @@ admin.site.register(Formation, admin.ModelAdmin)  # Assuming FormationAdmin is n
 admin.site.register(CompanySubscription, CompanySubscriptionAdmin)  # Using the defined CompanySubscriptionAdmin
 admin.site.register(SubscriptionPlan, SubscriptionPlanAdmin)  # Using the defined SubscriptionPlanAdmin
 admin.site.register(Payment, PaymentAdmin)  # Using the defined PaymentAdmin
+admin.site.register(Config, admin.ModelAdmin)  # Assuming ConfigAdmin is not defined, using default ModelAdmin

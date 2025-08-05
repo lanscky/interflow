@@ -69,11 +69,8 @@ INSTALLED_APPS = [
     'django_celery_results',
     #'django_extensions',
 ]
-# Cron jobs configuration
-CRONJOBS = [
-    # format : (schedule, command)
-    ('0 0 * * *', 'appstage.cron.activate_next_plan', '>> /tmp/mycron.log 2>&1'),  # Tous les jours à minuit
-]
+
+
 
 #JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'd9ZKYd7VNH7DAAOvOc1dseHcNkEq1Ntm_W63bnekTy11uX3rTpdt42O6Q9PcgvKibfookGdvoQS5_KNW9TSAIg')
 SIMPLE_JWT = {
@@ -224,3 +221,10 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Africa/Kinshasa'
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'lansckytshinkola9@gmail.com'
+EMAIL_HOST_PASSWORD = 'gftaccdgyorwrdho'  # pas ton mot de passe normal

@@ -212,3 +212,22 @@ class Payment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     def __str__(self):
         return f"Paiement de {self.company.name} - {self.amount}€ ({self.status})"
+    
+
+class Config(models.Model):
+    site_name = models.CharField(max_length=255, default="Totinda")
+    logo = models.ImageField(upload_to='config/', null=True, blank=True)
+    homepage_banner = models.ImageField(upload_to='config/', null=True, blank=True)
+    contact_email = models.EmailField(default="contact@totinda.com")
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
+    facebook_link = models.URLField(blank=True, null=True)
+    twitter_link = models.URLField(blank=True, null=True)
+    linkedin_link = models.URLField(blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuration"
+        verbose_name_plural = "Configurations"
+
+    def __str__(self):
+        return self.site_name
