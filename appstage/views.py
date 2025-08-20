@@ -27,6 +27,12 @@ from django.utils import timezone
 from datetime import timedelta
 #envoie m'email
 from appstage.tasks import send_welcome_email
+# verification de l'activation du compte
+from .utils import decode_activation_token
+from .utils import generate_activation_token
+from .tasks import send_activation_email
+from django.contrib.auth.password_validation import validate_password
+from django.db.models import Count
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -44,6 +50,73 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     pagination_class = StandardResultsSetPagination
+
+    @action(detail=False, methods=['post'], url_path='activate')
+    def activate_account(self, request):
+        token = request.data.get('token')
+        if not token:
+            return Response({'error': 'Token manquant'}, status=status.HTTP_400_BAD_REQUEST)
+
+        payload = decode_activation_token(token)
+        if not payload:
+            return Response({'error': 'Token invalide ou expiré'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(id=payload['user_id'], email=payload['email'])
+        except User.DoesNotExist:
+            return Response({'error': 'Utilisateur introuvable'}, status=status.HTTP_404_NOT_FOUND)
+
+        if user.is_active:
+            return Response({'message': 'Compte déjà activé'}, status=status.HTTP_200_OK)
+
+        user.is_active = True
+        user.save()
+        return Response({'message': 'Compte activé avec succès'}, status=status.HTTP_200_OK)
+    
+    # ✅ Nouveau endpoint pour renvoyer le mail d'activation
+    @action(detail=False, methods=['post'], url_path='resend-activation')
+    def resend_activation(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({'error': 'Email manquant'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({'error': "Aucun utilisateur trouvé avec cet email"}, status=status.HTTP_404_NOT_FOUND)
+
+        if user.is_active:
+            return Response({'message': 'Ce compte est déjà activé'}, status=status.HTTP_200_OK)
+
+        # Générer un nouveau token et lien
+        token = generate_activation_token(user)
+        activation_link = f"https://totinda.com/activate?token={token}"
+
+        # Envoyer via Celery
+        send_activation_email.delay(user.email, user.username, activation_link)
+
+        return Response({'message': 'Email de vérification renvoyé avec succès'}, status=status.HTTP_200_OK)
+        
+    @action(detail=False, methods=['post'], url_path='change-password')
+    def change_password(self, request):
+        user = request.user
+        data = request.data
+
+        old_password = data.get('old_password')
+        new_password = data.get('new_password')
+
+        if not user.check_password(old_password):
+            return Response({"detail": "Ancien mot de passe incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            validate_password(new_password, user=user)
+        except Exception as e:
+            return Response({"detail": e.messages}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save()
+
+        return Response({"detail": "Mot de passe mis à jour avec succès."})
 
 class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.all()
@@ -75,8 +148,31 @@ class CompanyUserViewSet(viewsets.ModelViewSet):
 class OffreStageViewSet(viewsets.ModelViewSet):
     queryset = OffreStage.objects.all().order_by('-id')
     serializer_class = OffreStageSerializer
-    permission_classes = [IsStaffPermission]
+    permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        return OffreStage.objects.annotate(
+            nombre_candidats=Count('candidature')
+        )
+
+    @action(detail=False, methods=['get'], url_path='offresactives')
+    def offres_actives(self, request):
+        user = request.user
+        if not user.is_authenticated:
+            return Response({"error": "Utilisateur non authentifié."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        student = Student.objects.filter(user=user).first()
+        if not student:
+            return Response({"error": "Profil étudiant introuvable."}, status=status.HTTP_404_NOT_FOUND)
+
+        offres = OffreStage.objects.filter(is_active=True).annotate(
+            nombre_candidats=Count("candidature")
+        ).select_related(
+            "company__companysubscription__plan"
+        )
+        serializer = self.get_serializer(offres, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
     @action(detail=False, methods=['get'], url_path='by-company/(?P<company_id>[^/.]+)')
     def by_company(self, request, company_id=None):
         offres = self.queryset.filter(company_id=company_id)
@@ -111,11 +207,38 @@ class OffreStageViewSet(viewsets.ModelViewSet):
 
 class CandidatureViewSet(viewsets.ModelViewSet):
     #queryset = Candidature.objects.all()
+    MAX_CANDIDATURES_GRATUIT = 5
     queryset = Candidature.objects.select_related('student', 'offre_stage', 'offre_stage__company')
 
     serializer_class = CandidatureSerializer
     permission_classes = [IsStaffPermission]
 
+    def create(self, request, *args, **kwargs):
+        offre_id = request.data.get("offre_stage")
+        if not offre_id:
+            raise PermissionDenied("L'ID de l'offre est requis.")
+
+        try:
+            offre = OffreStage.objects.select_related(
+                "company__companysubscription__plan"
+            ).get(id=offre_id)
+        except OffreStage.DoesNotExist:
+            raise PermissionDenied("Offre introuvable.")
+
+        subscription = getattr(offre.company, "companysubscription", None)
+        plan = subscription.plan if subscription else None
+
+        if plan is not None:
+            if plan.price <= 0:
+                nb_candidatures = Candidature.objects.filter(offre_stage=offre).count()
+                if nb_candidatures >= self.MAX_CANDIDATURES_GRATUIT:
+                    raise PermissionDenied(
+                        "Limite de candidatures atteinte pour cette offre gratuite."
+                    )
+        # Si plan is None, illimité, donc pas de limite
+
+        return super().create(request, *args, **kwargs)
+    
     @action(detail=False, methods=['get'], url_path='by-student/(?P<student_id>[^/.]+)')
     def by_student(self, request, student_id=None):
         candidatures = self.queryset.filter(student_id=student_id)

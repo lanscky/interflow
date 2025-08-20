@@ -6,7 +6,7 @@ from .models import User, Student, School, SchoolUser, Company,CompanyUser, Offr
 
 class CustomUserAdmin(UserAdmin):
     add_form = UserCreationForm
-    list_display = ('id', 'username', 'email', 'first_name', 'last_name', 'role')
+    list_display = ('id', 'username', 'is_active', 'email', 'first_name', 'last_name', 'role')
     search_fields = ('username', 'email', 'first_name', 'last_name')
     list_filter = ('role',)
     add_fieldsets = (

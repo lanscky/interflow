@@ -14,6 +14,8 @@ from pathlib import Path
 from datetime import timedelta 
 import os
 
+import dj_database_url
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -42,12 +44,14 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "https://totinda.vercel.app",
     "https://totinda.com",
+    "https://www.totinda.com",
 ]
 CORS_ALLOWED_ORIGINS = [
     "https://totinda.vercel.app",
     "http://localhost:3000",
     "https://interflow.nourtime.com",
     "https://totinda.com",
+    "https://www.totinda.com",
 ]
 CORS_ALLOW_CREDENTIALS = True
 # Application definition
@@ -148,15 +152,19 @@ WSGI_APPLICATION = "project.wsgi.application"
 #     }
 # }
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': os.getenv("POSTGRES_DB"),
+#         'USER': os.getenv("POSTGRES_USER"),
+#         'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
+#         'HOST': 'db',
+#         'PORT': '5432',
+#     }
+# }
+
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv("POSTGRES_DB"),
-        'USER': os.getenv("POSTGRES_USER"),
-        'PASSWORD': os.getenv("POSTGRES_PASSWORD"),
-        'HOST': 'db',
-        'PORT': '5432',
-    }
+    'default': dj_database_url.config(default=os.environ.get('DATABASE_URL'))
 }
 
 
@@ -223,8 +231,13 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Africa/Kinshasa'
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
+EMAIL_HOST = 'smtp.hostinger.com'
+EMAIL_PORT = 465 #587 
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'lansckytshinkola9@gmail.com'
-EMAIL_HOST_PASSWORD = 'gftaccdgyorwrdho'  # pas ton mot de passe normal
+EMAIL_HOST_USER = 'configuration@totinda.com'
+#EMAIL_HOST_USER = 'lansckytshinkola9@gmail.com'
+#EMAIL_HOST_PASSWORD = 'gftaccdgyorwrdho'  # pas ton mot de passe normal
+EMAIL_HOST_PASSWORD = 'Totind@2025!#'  # pas ton mot de passe normal
+
+
+DEFAULT_FROM_EMAIL = 'noreply@totinda.com'
