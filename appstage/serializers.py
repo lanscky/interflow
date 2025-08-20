@@ -7,8 +7,12 @@ from .models import (
     OffreStage, Candidature, AffectationStage, Evaluation, Formation, Competence, CompanySubscription, SubscriptionPlan, Payment, Config
 )
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-
+# Mail de verification
+from .tasks import send_activation_email
+from .utils import generate_activation_token
 User = get_user_model()
+
+from django.db import transaction
 
 
 
@@ -37,7 +41,8 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             "profile_picture_url": profile_picture_url,
             "first_name": user.first_name,
             "last_name": user.last_name,
-            "role_user": user.role
+            "role_user": user.role,
+            "is_active_user": user.is_active,
         }
         
 
@@ -100,15 +105,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data["user"] = user_data
 
         return data
-# class UserSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = User
-#         fields = ['id', 'username', 'email', 'password', 'role']
-#         extra_kwargs = {'password': {'write_only': True}}
-
-#     def create(self, validated_data):
-#         user = User.objects.create_user(**validated_data)
-#         return user
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -129,7 +125,15 @@ class UserSerializer(serializers.ModelSerializer):
         user.set_password(password)
         user.is_superuser = is_superuser
         user.is_staff = is_staff
+        user.is_active = False
         user.save()
+
+        token = generate_activation_token(user)
+        activation_link = f"https://totinda.com/activate?token={token}"
+
+        # Utilisation de Celery
+        send_activation_email.delay(user.email, user.username, activation_link)
+
         return user
 
 
@@ -168,14 +172,22 @@ class CompanyUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CompanyUser
         fields = ['user', 'company', 'role']
-
+    
+    @transaction.atomic
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         company_data = validated_data.pop('company')
         company, _ = Company.objects.get_or_create(name=company_data['name'], defaults={"secteur": company_data['secteur'], "description": company_data['description']})
         user_data['role'] = 'company'
+        user_data['is_active'] = False  # L'utilisateur n'est pas actif par défaut
         user = User.objects.create_user(**user_data)
         company_user = CompanyUser.objects.create(user=user, company=company, **validated_data)
+
+        token = generate_activation_token(user)
+        activation_link = f"https://totinda.com/activate?token={token}"
+
+        # Utilisation de Celery
+        send_activation_email.delay(user.email, user.username, activation_link)
         return company_user
 
 class StudentSerializer(serializers.ModelSerializer):
@@ -186,17 +198,33 @@ class StudentSerializer(serializers.ModelSerializer):
         model = Student
         fields = ['id', 'user', 'school', 'filiere', 'niveau', 'cv']
 
+    @transaction.atomic
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         user_data['role'] = 'student'
+        user_data['is_active'] = False  # L'utilisateur n'est pas actif par défaut
         user = User.objects.create_user(**user_data)
         student = Student.objects.create(user=user, **validated_data)
+
+        token = generate_activation_token(user)
+        activation_link = f"https://totinda.com/activate?token={token}"
+
+        # Utilisation de Celery
+        send_activation_email.delay(user.email, user.username, activation_link)
         return student
 
 class OffreStageSerializer(serializers.ModelSerializer):
+    nombre_candidats = serializers.IntegerField(read_only=True)
+    plan_entreprise = serializers.SerializerMethodField()
     class Meta:
         model = OffreStage
-        fields = '__all__'
+        fields = "__all__"
+
+    def get_plan_entreprise(self, obj):
+        sub = getattr(obj.company, "companysubscription", None)
+        if sub and sub.plan:
+            return sub.plan.price
+        return None
     
 
 class CandidatureSerializer(serializers.ModelSerializer):
@@ -252,7 +280,7 @@ class PaymentSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         payment = Payment.objects.create(**validated_data)
-        return 
+        return payment
 class SubscriptionPlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubscriptionPlan

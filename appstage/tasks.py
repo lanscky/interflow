@@ -25,8 +25,17 @@ def send_welcome_email(user_email, username=None, plan_name=None,date_debut=None
     message = f"Merci de vous être inscrit, {username} !"
     if plan_name and date_debut and date_fin:
         message += f"\n\nVotre plan : {plan_name}\nDate de début : {date_debut}\nDate de fin : {date_fin}"
-    sender = "contact@totinda.com"  # Remplacez par votre adresse email d'envoi
+    sender = "noreply@totinda.com"  # Remplacez par votre adresse email d'envoi
     recipients = [user_email]
 
     send_mail(subject, message, sender, recipients)
     return f"Email envoyé à {user_email}"
+
+@shared_task
+def send_activation_email(email, username, activation_link):
+    send_mail(
+        subject="Activez votre compte",
+        message=f"Bonjour {username}, cliquez sur ce lien pour activer votre compte : {activation_link}",
+        from_email="noreply@totinda.com",
+        recipient_list=[email],
+    )

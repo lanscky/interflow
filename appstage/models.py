@@ -24,12 +24,6 @@ class User(AbstractUser):
 
     REQUIRED_FIELDS = ['username']
 
-    # @property
-    # def company(self):
-    #     try:
-    #         return self.company_user.get(is_active=True).company
-    #     except CompanyUser.DoesNotExist:
-    #         return None
 
 # 2. Profil étudiant
 class Student(models.Model):

@@ -19,6 +19,7 @@ services:
     depends_on:
       - db
       - redis
+    restart: unless-stopped
 
   db:
     image: postgres:15
@@ -29,11 +30,13 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    restart: unless-stopped
   redis:
     image: redis:7
     container_name: redis_broker
     ports:
       - "6379:6379"
+    restart: unless-stopped
 
   celery:
     build: .
@@ -47,6 +50,7 @@ services:
       - redis
       - db
       - web
+    restart: unless-stopped
   celery_worker:
     build: .
     command: celery -A project worker -l info
@@ -55,6 +59,7 @@ services:
     depends_on:
       - web
       - redis
+    restart: unless-stopped
   celery-beat:
     build: .
     container_name: celery_beat
@@ -67,6 +72,7 @@ services:
       - redis
       - db
       - web
+    restart: unless-stopped
   nginx:
     image: nginx:latest
     container_name: nginx_reverse_proxy
@@ -83,6 +89,7 @@ services:
       # - certbot-www:/var/www/certbot
     depends_on:
       - web
+    restart: unless-stopped
   flower:
     image: mher/flower
     container_name: flower_monitor
