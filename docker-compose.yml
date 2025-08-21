@@ -116,7 +116,28 @@ services:
     #   -d interflow.nourtime.com"    
 
     entrypoint: certbot certonly --webroot -w /var/www/certbot --force-renewal --email lansckytshinkola9@gmail.com -d interflow.nourtime.com --agree-tos
-
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+  
+  backup:
+    image: postgres:15
+    container_name: postgres_backup
+    volumes:
+      - ./backups:/backups
+    env_file:
+      - .env
+    entrypoint: >
+      sh -c "pg_dump -h db -U ${POSTGRES_USER} ${POSTGRES_DB} > /backups/backup_$(date +%Y%m%d_%H%M%S).sql"
+    depends_on:
+      - db
 volumes:
   postgres_data:
   certbot-etc:
@@ -134,3 +155,5 @@ volumes:
 #Pour arrêter tous les services :
 #docker-compose down
 #Pour reconstruire l'image web :
+
+#docker exec -t postgres_db pg_dump -U django_user django_db > backup_$(date +%Y%m%d_%H%M%S).sql
