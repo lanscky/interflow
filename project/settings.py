@@ -16,6 +16,7 @@ import os
 
 import dj_database_url
 
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -164,8 +165,24 @@ WSGI_APPLICATION = "project.wsgi.application"
 # }
 
 DATABASES = {
-    'default': dj_database_url.config(default=os.environ.get('DATABASE_URL'))
+    'default': {
+        #'ENGINE': 'django.db.backends.sqlite3',
+        #'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'mysql.connector.django',
+        'NAME': os.getenv('MYSQL_DATABASE', 'totinda_db'),
+        'USER': os.getenv('MYSQL_USER', 'lanscky'),
+        'PASSWORD': os.getenv('MYSQL_PASSWORD', 'Bafwa@2018'),
+        'HOST': 'db',
+        'PORT': '3306',
+        'OPTIONS': {
+           'init_command': "SET sql_mode='STRICT_TRANS_TABLES' ",
+        },
+    }
 }
+
+# DATABASES = {
+#     'default': dj_database_url.config(default=os.environ.get('DATABASE_URL'))
+# }
 
 
 SWAGGER_SETTINGS = {
