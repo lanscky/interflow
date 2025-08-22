@@ -41,6 +41,7 @@ USE_X_FORWARDED_HOST = True
 #Fin exception
 CSRF_TRUSTED_ORIGINS = [
     "https://interflow.nourtime.com",
+    "https://backend.totinda.com",
     "http://localhost:8000",
     "http://localhost:3000",
     "https://totinda.vercel.app",
@@ -51,6 +52,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://totinda.vercel.app",
     "http://localhost:3000",
     "https://interflow.nourtime.com",
+    "https://backend.totinda.com",
     "https://totinda.com",
     "https://www.totinda.com",
 ]
