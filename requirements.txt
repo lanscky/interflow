@@ -28,6 +28,7 @@ idna==3.10
 inflection==0.5.1
 kombu==5.5.4
 Markdown==3.8
+#PyMySQL==1.1.1
 packaging==25.0
 pillow==11.3.0
 prometheus_client==0.22.1
@@ -48,5 +49,4 @@ urllib3==2.4.0
 vine==5.1.0
 wcwidth==0.2.13
 whitenoise==6.9.0
-dj-database-url
-redis
+mysql-connector-python

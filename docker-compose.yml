@@ -3,7 +3,7 @@
 services:
   web:
     build: .
-    container_name: interflow_app
+    container_name: totinda
     command: gunicorn project.wsgi:application --bind 0.0.0.0:8000
     #command: /start.sh
     volumes:
@@ -21,16 +21,54 @@ services:
       - redis
     restart: unless-stopped
 
+  # db:
+  #   image: postgres:15
+  #   container_name: postgres_db
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data/
+  #   environment:
+  #     POSTGRES_DB: ${POSTGRES_DB}
+  #     POSTGRES_USER: ${POSTGRES_USER}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #   restart: unless-stopped
   db:
-    image: postgres:15
-    container_name: postgres_db
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
+    image: mysql:8.1
+    container_name: mysql_db
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "3330:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
     restart: unless-stopped
+  # pgadmin:
+  #   image: dpage/pgadmin4
+  #   container_name: pgadmin
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+  #     PGADMIN_DEFAULT_PASSWORD: ${POSTGRES_PASSWORD}
+  #   ports:
+  #     - "5050:80"
+  #   depends_on:
+  #     - db
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: phpmyadmin
+    platform: linux/amd64
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "8888:80"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+
   redis:
     image: redis:7
     container_name: redis_broker
@@ -116,34 +154,35 @@ services:
     #   -d interflow.nourtime.com"    
 
     entrypoint: certbot certonly --webroot -w /var/www/certbot --force-renewal --email lansckytshinkola9@gmail.com -d interflow.nourtime.com --agree-tos
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - db
   
+  # backup:
+  #   image: postgres:15
+  #   container_name: postgres_backup
+  #   volumes:
+  #     - ./backups:/backups
+  #   env_file:
+  #     - .env
+  #   entrypoint: >
+  #     sh -c "pg_dump -h db -U ${POSTGRES_USER} ${POSTGRES_DB} > /backups/backup_$(date +%Y%m%d_%H%M%S).sql"
+  #   depends_on:
+  #     - db
   backup:
-    image: postgres:15
-    container_name: postgres_backup
+    image: mysql:8.1
+    container_name: mysql_backup
     volumes:
       - ./backups:/backups
     env_file:
       - .env
     entrypoint: >
-      sh -c "pg_dump -h db -U ${POSTGRES_USER} ${POSTGRES_DB} > /backups/backup_$(date +%Y%m%d_%H%M%S).sql"
+      sh -c "mysqldump -h db -u ${MYSQL_USER} -p${MYSQL_PASSWORD} ${MYSQL_DATABASE} > /backups/backup_$(date +%Y%m%d_%H%M%S).sql"
     depends_on:
       - db
 volumes:
-  postgres_data:
-  certbot-etc:
-  certbot-www:
+  mysql_data:
   media_data:
   static_data:
+  certbot-etc:
+  certbot-www:
 
 
 #Démarre tous les services sauf certbot :
