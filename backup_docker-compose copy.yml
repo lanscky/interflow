@@ -10,10 +10,13 @@ services:
       - .:/app
       - media_data:/app/media
       - static_data:/app/static
-    # expose:
-    #   - "8000":
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000":
+    networks:
+      - proxy
+      - totinda_net
+    # ports:
+    #   - "8000:8000"
     env_file:
       - .env
     depends_on:
@@ -21,6 +24,16 @@ services:
       - redis
     restart: unless-stopped
 
+  # db:
+  #   image: postgres:15
+  #   container_name: postgres_db
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data/
+  #   environment:
+  #     POSTGRES_DB: ${POSTGRES_DB}
+  #     POSTGRES_USER: ${POSTGRES_USER}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #   restart: unless-stopped
   db:
     image: mysql:8.1
     container_name: mysql_db
@@ -34,7 +47,16 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     restart: unless-stopped
-
+  # pgadmin:
+  #   image: dpage/pgadmin4
+  #   container_name: pgadmin
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+  #     PGADMIN_DEFAULT_PASSWORD: ${POSTGRES_PASSWORD}
+  #   ports:
+  #     - "5050:80"
+  #   depends_on:
+  #     - db
   phpmyadmin:
     image: phpmyadmin/phpmyadmin:latest
     container_name: phpmyadmin
@@ -118,7 +140,7 @@ services:
 
 
     ports:
-      - "8080:5555"
+      - "5555:5555"
     depends_on:
       - redis
       - celery_worker
@@ -129,10 +151,24 @@ services:
     volumes:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
-  
+    # entrypoint: >
+    #   sh -c "certbot certonly --webroot --webroot-path=/var/www/certbot 
+    #   --email lansckytshinkola9@gmail.com --agree-tos --no-eff-email 
+    #   -d interflow.nourtime.com"    
 
     entrypoint: certbot certonly --webroot -w /var/www/certbot --force-renewal --email lansckytshinkola9@gmail.com -d backend.totinda.com --agree-tos
-
+  
+  # backup:
+  #   image: postgres:15
+  #   container_name: postgres_backup
+  #   volumes:
+  #     - ./backups:/backups
+  #   env_file:
+  #     - .env
+  #   entrypoint: >
+  #     sh -c "pg_dump -h db -U ${POSTGRES_USER} ${POSTGRES_DB} > /backups/backup_$(date +%Y%m%d_%H%M%S).sql"
+  #   depends_on:
+  #     - db
   backup:
     image: mysql:8.1
     container_name: mysql_backup
@@ -151,6 +187,10 @@ volumes:
   certbot-etc:
   certbot-www:
 
+networks:
+  proxy:
+    external: true
+  totinda_net:
 
 #Démarre tous les services sauf certbot :
 #docker-compose up -d web db nginx
