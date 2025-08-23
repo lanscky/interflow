@@ -5,21 +5,22 @@ services:
     build: .
     container_name: totinda
     command: gunicorn project.wsgi:application --bind 0.0.0.0:8000
-    #command: /start.sh
     volumes:
       - .:/app
       - media_data:/app/media
       - static_data:/app/static
-    # expose:
-    #   - "8000":
-    # ports:
-    #   - "8000:8000"
     env_file:
       - .env
     depends_on:
       - db
       - redis
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=Host(`backend.totinda.com`)"
+      - "traefik.http.routers.web.entrypoints=websecure"
+      - "traefik.http.routers.web.tls.certresolver=myresolver"
+      - "traefik.http.services.web.loadbalancer.server.port=8000"
 
   db:
     image: mysql:8.1
@@ -49,7 +50,6 @@ services:
       - db
     restart: unless-stopped
 
-
   redis:
     image: redis:7
     container_name: redis_broker
@@ -70,15 +70,7 @@ services:
       - db
       - web
     restart: unless-stopped
-  celery_worker:
-    build: .
-    command: celery -A project worker -l info
-    volumes:
-      - .:/app
-    depends_on:
-      - web
-      - redis
-    restart: unless-stopped
+
   celery-beat:
     build: .
     container_name: celery_beat
@@ -92,23 +84,7 @@ services:
       - db
       - web
     restart: unless-stopped
-  nginx:
-    image: nginx:latest
-    container_name: nginx_reverse_proxy
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
-      - media_data:/app/media
-      - static_data:/app/static
-      # - certbot-etc:/etc/letsencrypt
-      # - certbot-www:/var/www/certbot
-    depends_on:
-      - web
-    restart: unless-stopped
+
   flower:
     image: mher/flower
     container_name: flower_monitor
@@ -119,35 +95,188 @@ services:
       - "5555:5555"
     depends_on:
       - redis
-      - celery_worker
+      - celery
+    restart: unless-stopped
 
-  certbot:
-    image: certbot/certbot
-    container_name: certbot
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.email=lansckytshinkola9@gmail.com"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080" # Dashboard Traefik
     volumes:
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
-  
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./letsencrypt:/letsencrypt"
+    restart: unless-stopped
 
-    entrypoint: certbot certonly --webroot -w /var/www/certbot --force-renewal --email lansckytshinkola9@gmail.com -d backend.totinda.com --agree-tos
-
-  backup:
-    image: mysql:8.1
-    container_name: mysql_backup
-    volumes:
-      - ./backups:/backups
-    env_file:
-      - .env
-    entrypoint: >
-      sh -c "mysqldump -h db -u ${MYSQL_USER} -p${MYSQL_PASSWORD} ${MYSQL_DATABASE} > /backups/backup_$(date +%Y%m%d_%H%M%S).sql"
-    depends_on:
-      - db
 volumes:
   mysql_data:
   media_data:
   static_data:
-  certbot-etc:
-  certbot-www:
+  letsencrypt:
+
+
+
+
+# #version: '3.9'
+
+# services:
+#   web:
+#     build: .
+#     container_name: totinda
+#     command: gunicorn project.wsgi:application --bind 0.0.0.0:8000
+#     #command: /start.sh
+#     volumes:
+#       - .:/app
+#       - media_data:/app/media
+#       - static_data:/app/static
+#     # expose:
+#     #   - "8000":
+#     ports:
+#       - "8000:8000"
+#     env_file:
+#       - .env
+#     depends_on:
+#       - db
+#       - redis
+#     restart: unless-stopped
+
+#   db:
+#     image: mysql:8.1
+#     container_name: mysql_db
+#     environment:
+#       MYSQL_DATABASE: ${MYSQL_DATABASE}
+#       MYSQL_USER: ${MYSQL_USER}
+#       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+#       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+#     ports:
+#       - "3306:3306"
+#     volumes:
+#       - mysql_data:/var/lib/mysql
+#     restart: unless-stopped
+
+#   phpmyadmin:
+#     image: phpmyadmin/phpmyadmin:latest
+#     container_name: phpmyadmin
+#     platform: linux/amd64
+#     environment:
+#       PMA_HOST: db
+#       PMA_PORT: 3306
+#       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+#     ports:
+#       - "8888:80"
+#     depends_on:
+#       - db
+#     restart: unless-stopped
+
+
+#   redis:
+#     image: redis:7
+#     container_name: redis_broker
+#     ports:
+#       - "6379:6379"
+#     restart: unless-stopped
+
+#   celery:
+#     build: .
+#     container_name: celery_worker
+#     command: celery -A project worker --loglevel=info
+#     volumes:
+#       - .:/app
+#     env_file:
+#       - .env
+#     depends_on:
+#       - redis
+#       - db
+#       - web
+#     restart: unless-stopped
+#   celery_worker:
+#     build: .
+#     command: celery -A project worker -l info
+#     volumes:
+#       - .:/app
+#     depends_on:
+#       - web
+#       - redis
+#     restart: unless-stopped
+#   celery-beat:
+#     build: .
+#     container_name: celery_beat
+#     command: celery -A project beat --loglevel=info
+#     volumes:
+#       - .:/app
+#     env_file:
+#       - .env
+#     depends_on:
+#       - redis
+#       - db
+#       - web
+#     restart: unless-stopped
+#   nginx:
+#     image: nginx:latest
+#     container_name: nginx_reverse_proxy
+#     ports:
+#       - "80:80"
+#       - "443:443"
+#     volumes:
+#       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+#       - ./certbot/conf:/etc/letsencrypt
+#       - ./certbot/www:/var/www/certbot
+#       - media_data:/app/media
+#       - static_data:/app/static
+
+#     depends_on:
+#       - web
+#     restart: unless-stopped
+#   flower:
+#     image: mher/flower
+#     container_name: flower_monitor
+#     environment:
+#       - CELERY_BROKER_URL=redis://redis:6379/0
+#       - FLOWER_BASIC_AUTH=${FLOWER_BASIC_AUTH}
+#     ports:
+#       - "5555:5555"
+#     depends_on:
+#       - redis
+#       - celery_worker
+
+#   certbot:
+#     image: certbot/certbot
+#     container_name: certbot
+#     volumes:
+#       - ./certbot/conf:/etc/letsencrypt
+#       - ./certbot/www:/var/www/certbot
+  
+
+#     entrypoint: certbot certonly --webroot -w /var/www/certbot --force-renewal --email lansckytshinkola9@gmail.com -d backend.totinda.com --agree-tos
+
+#   backup:
+#     image: mysql:8.1
+#     container_name: mysql_backup
+#     volumes:
+#       - ./backups:/backups
+#     env_file:
+#       - .env
+#     entrypoint: >
+#       sh -c "mysqldump -h db -u ${MYSQL_USER} -p${MYSQL_PASSWORD} ${MYSQL_DATABASE} > /backups/backup_$(date +%Y%m%d_%H%M%S).sql"
+#     depends_on:
+#       - db
+# volumes:
+#   mysql_data:
+#   media_data:
+#   static_data:
+#   certbot-etc:
+#   certbot-www:
 
 
 #Démarre tous les services sauf certbot :
