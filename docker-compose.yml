@@ -22,6 +22,14 @@ services:
       - "traefik.http.routers.web.tls.certresolver=myresolver"
       - "traefik.http.services.web.loadbalancer.server.port=8000"
 
+      # Router HTTP pour redirection
+      - "traefik.http.routers.web-http.rule=Host(`backend.totinda.com`)"
+      - "traefik.http.routers.web-http.entrypoints=web"
+      - "traefik.http.routers.web-http.middlewares=redirect-to-https"
+      
+      # Middleware de redirection
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+
   db:
     image: mysql:8.1
     container_name: mysql_db
