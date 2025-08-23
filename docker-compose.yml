@@ -115,10 +115,8 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - FLOWER_BASIC_AUTH=${FLOWER_BASIC_AUTH}
-
-
     ports:
-      - "8080:5555"
+      - "5555:5555"
     depends_on:
       - redis
       - celery_worker
