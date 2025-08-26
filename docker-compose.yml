@@ -65,7 +65,7 @@ services:
       - "6379:6379"
     restart: unless-stopped
 
-  celery:
+  celery_worker:
     build: .
     container_name: celery_worker
     command: celery -A project worker --loglevel=info
@@ -103,7 +103,7 @@ services:
       - "5555:5555"
     depends_on:
       - redis
-      - celery
+      - celery_worker
     restart: unless-stopped
 
   traefik:
