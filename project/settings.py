@@ -251,8 +251,8 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # configuration celery
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
-CELERY_RESULT_BACKEND = 'django-db'
-#CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/1')
+#CELERY_RESULT_BACKEND = 'django-db'
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/1')
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
@@ -267,6 +267,5 @@ EMAIL_HOST_USER = 'configuration@totinda.com'
 #EMAIL_HOST_USER = 'lansckytshinkola9@gmail.com'
 #EMAIL_HOST_PASSWORD = 'gftaccdgyorwrdho'  # pas ton mot de passe normal
 EMAIL_HOST_PASSWORD = 'Totind@2025!#'  # pas ton mot de passe normal
-
 
 DEFAULT_FROM_EMAIL = 'noreply@totinda.com'
