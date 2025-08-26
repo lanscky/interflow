@@ -260,12 +260,12 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Africa/Kinshasa'
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.hostinger.com'
-EMAIL_PORT = 465 #587 
+EMAIL_HOST = 'smtp.gmail.com' #'smtp.hostinger.com'
+EMAIL_PORT = 587 #465 
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'configuration@totinda.com'
-#EMAIL_HOST_USER = 'lansckytshinkola9@gmail.com'
-#EMAIL_HOST_PASSWORD = 'gftaccdgyorwrdho'  # pas ton mot de passe normal
-EMAIL_HOST_PASSWORD = 'Totind@2025!#'  # pas ton mot de passe normal
+#EMAIL_HOST_USER = 'configuration@totinda.com'
+EMAIL_HOST_USER = 'lansckytshinkola9@gmail.com'
+EMAIL_HOST_PASSWORD = 'gftaccdgyorwrdho'  # pas ton mot de passe normal
+#EMAIL_HOST_PASSWORD = 'Totind@2025!#'  # pas ton mot de passe normal
 
 DEFAULT_FROM_EMAIL = 'noreply@totinda.com'
