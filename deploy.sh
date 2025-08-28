@@ -9,8 +9,8 @@ git reset --hard
 git pull origin main
 
 # Build et redémarrage des conteneurs
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
+docker compose down
+docker compose build --no-cache
+docker compose up -d
 
 echo "Déploiement terminé."
