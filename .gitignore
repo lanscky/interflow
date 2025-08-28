@@ -5,3 +5,4 @@ __pycache__/
 # Ignorer les environnements virtuels
 env/
 venv/
+deploy/
