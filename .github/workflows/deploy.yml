@@ -20,4 +20,4 @@ jobs:
 
       - name: Deploy to VPS
         run: |
-          ssh root@147.93.53.33 "cd /var/www/interflow && ./deploy.sh"
+          ssh deployer@147.93.53.33 "cd /var/www/interflow && ./deploy.sh"
