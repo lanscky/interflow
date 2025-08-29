@@ -64,7 +64,7 @@ class UserViewSet(viewsets.ModelViewSet):
         try:
             user = User.objects.get(id=payload['user_id'], email=payload['email'])
         except User.DoesNotExist:
-            return Response({'error': 'Utilisateur introuvable'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Utilisateur introuvable !!'}, status=status.HTTP_404_NOT_FOUND)
 
         if user.is_active:
             return Response({'message': 'Compte déjà activé'}, status=status.HTTP_200_OK)
