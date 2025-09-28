@@ -53,3 +53,5 @@ mysql-connector-python
 redis
 django-redis
 channels-redis
+boto3 
+django-storages
