@@ -1,0 +1,12 @@
+.git
+.env
+project/.env
+env
+venv
+__pycache__
+*.pyc
+*.sql
+backups
+letsencrypt
+media
+.DS_Store

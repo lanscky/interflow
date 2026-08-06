@@ -1,6 +1,6 @@
 # views.py
 from rest_framework import viewsets, authentication,status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated, SAFE_METHODS
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import (
     User, Student, School, SchoolUser,
@@ -20,7 +20,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
 from rest_framework.response import Response                                                      
 from rest_framework.decorators import action   
-from .permissions import IsStaffPermission  
+from .permissions import IsStaffPermission, IsRelatedObjectOwnerOrStaff, company_for_user
                                                
 from rest_framework.exceptions import PermissionDenied, ValidationError, APIException
 from django.utils import timezone
@@ -33,6 +33,14 @@ from .utils import generate_activation_token
 from .tasks import send_activation_email
 from django.contrib.auth.password_validation import validate_password
 from django.db.models import Count
+from django.db import transaction
+from decimal import Decimal, InvalidOperation
+import logging
+import requests
+from django.conf import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -50,6 +58,73 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     pagination_class = StandardResultsSetPagination
+
+    def get_permissions(self):
+        if self.action in {'activate_account', 'resend_activation'}:
+            return [AllowAny()]
+        return [IsAuthenticated(), IsRelatedObjectOwnerOrStaff()]
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return User.objects.all()
+        return User.objects.filter(pk=self.request.user.pk)
+
+    @staticmethod
+    def _account_files(user):
+        """Capture les fichiers personnels avant que la suppression en cascade ne les masque."""
+        files = []
+
+        def add(file_field):
+            if file_field and file_field.name:
+                files.append((file_field.storage, file_field.name))
+
+        add(user.profile_picture)
+        try:
+            student = user.student
+        except Student.DoesNotExist:
+            student = None
+
+        if student:
+            add(student.cv)
+            for candidature in student.candidature_set.all():
+                add(candidature.letter_of_support)
+            for affectation in student.affectationstage_set.all():
+                add(affectation.convention_pdf)
+
+        return files
+
+    @action(detail=False, methods=['delete'], url_path='delete-account')
+    def delete_account(self, request):
+        """Supprime définitivement le compte connecté et ses données associées."""
+        password = request.data.get('password')
+        if not password:
+            return Response(
+                {'detail': 'Le mot de passe actuel est requis.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not request.user.check_password(password):
+            return Response(
+                {'detail': 'Mot de passe incorrect.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        files = self._account_files(request.user)
+        with transaction.atomic():
+            request.user.delete()
+
+            def delete_personal_files():
+                for storage, name in files:
+                    try:
+                        storage.delete(name)
+                    except Exception:
+                        # La suppression du compte ne doit pas être annulée si le stockage
+                        # distant est momentanément indisponible, mais l'incident doit être
+                        # visible afin que l'exploitation puisse purger le fichier restant.
+                        logger.exception("Échec de suppression d'un fichier de compte: %s", name)
+
+            transaction.on_commit(delete_personal_files)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=['post'], url_path='activate')
     def activate_account(self, request):
@@ -121,8 +196,37 @@ class UserViewSet(viewsets.ModelViewSet):
 class StudentViewSet(viewsets.ModelViewSet):
     queryset = Student.objects.all()
     serializer_class = StudentSerializer
-    #authentication_classes = [JWTAuthentication]
-    #permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsRelatedObjectOwnerOrStaff]
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [AllowAny()]
+        return super().get_permissions()
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            return Student.objects.all()
+        if user.role == 'student':
+            return Student.objects.filter(user=user)
+        company = company_for_user(user)
+        if company:
+            return Student.objects.filter(
+                candidature__offre_stage__company=company
+            ).distinct()
+        if user.role == 'school':
+            return Student.objects.filter(school__schooluser__user=user).distinct()
+        return Student.objects.none()
+
+    def perform_update(self, serializer):
+        if not self.request.user.is_staff and serializer.instance.user_id != self.request.user.id:
+            raise PermissionDenied("Vous ne pouvez modifier que votre profil étudiant.")
+        serializer.save(user=serializer.instance.user)
+
+    def perform_destroy(self, instance):
+        if not self.request.user.is_staff and instance.user_id != self.request.user.id:
+            raise PermissionDenied("Vous ne pouvez supprimer que votre profil étudiant.")
+        instance.delete()
 
 class SchoolViewSet(viewsets.ModelViewSet):
     queryset = School.objects.all()
@@ -133,27 +237,59 @@ class SchoolViewSet(viewsets.ModelViewSet):
 class SchoolUserViewSet(viewsets.ModelViewSet):
     queryset = SchoolUser.objects.all()
     serializer_class = SchoolUserSerializer
-    #permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffPermission]
 
 class CompanyViewSet(viewsets.ModelViewSet):
     queryset = Company.objects.all()
     serializer_class = CompanySerializer
-    permission_classes = [IsStaffPermission]
+    permission_classes = [IsAuthenticated, IsRelatedObjectOwnerOrStaff]
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [IsAuthenticated()]
+        return super().get_permissions()
 
 class CompanyUserViewSet(viewsets.ModelViewSet):
     queryset = CompanyUser.objects.all()
     serializer_class = CompanyUserSerializer
-    #permission_classes = [IsStaffPermission]
+    permission_classes = [IsAuthenticated, IsRelatedObjectOwnerOrStaff]
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [AllowAny()]
+        return super().get_permissions()
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return CompanyUser.objects.all()
+        return CompanyUser.objects.filter(user=self.request.user)
 
 class OffreStageViewSet(viewsets.ModelViewSet):
     queryset = OffreStage.objects.all().order_by('-id')
     serializer_class = OffreStageSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsRelatedObjectOwnerOrStaff]
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [IsAuthenticated()]
+        return super().get_permissions()
 
     def get_queryset(self):
         return OffreStage.objects.annotate(
             nombre_candidats=Count('candidature')
         )
+
+    def perform_update(self, serializer):
+        company = company_for_user(self.request.user)
+        if not self.request.user.is_staff and serializer.instance.company != company:
+            raise PermissionDenied("Cette offre appartient à une autre entreprise.")
+        serializer.save(company=serializer.instance.company)
+
+    def perform_destroy(self, instance):
+        company = company_for_user(self.request.user)
+        if not self.request.user.is_staff and instance.company != company:
+            raise PermissionDenied("Cette offre appartient à une autre entreprise.")
+        instance.delete()
 
     @action(detail=False, methods=['get'], url_path='offresactives')
     def offres_actives(self, request):
@@ -211,7 +347,19 @@ class CandidatureViewSet(viewsets.ModelViewSet):
     queryset = Candidature.objects.select_related('student', 'offre_stage', 'offre_stage__company')
 
     serializer_class = CandidatureSerializer
-    permission_classes = [IsStaffPermission]
+    permission_classes = [IsAuthenticated, IsRelatedObjectOwnerOrStaff]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = self.queryset
+        if user.is_staff:
+            return queryset
+        if user.role == 'student':
+            return queryset.filter(student__user=user)
+        company = company_for_user(user)
+        if company:
+            return queryset.filter(offre_stage__company=company)
+        return queryset.none()
 
     def create(self, request, *args, **kwargs):
         offre_id = request.data.get("offre_stage")
@@ -237,16 +385,39 @@ class CandidatureViewSet(viewsets.ModelViewSet):
                     )
         # Si plan is None, illimité, donc pas de limite
 
-        return super().create(request, *args, **kwargs)
+        try:
+            student = Student.objects.get(user=request.user)
+        except Student.DoesNotExist:
+            raise PermissionDenied("Seuls les étudiants peuvent candidater.")
+        if Candidature.objects.filter(student=student, offre_stage=offre).exists():
+            raise ValidationError("Vous avez déjà candidaté à cette offre.")
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(student=student, status='pending')
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        changed_fields = set(serializer.validated_data)
+        if user.role == 'student' and changed_fields - {'motivation', 'letter_of_support'}:
+            raise PermissionDenied("Un étudiant ne peut modifier que sa motivation et sa lettre.")
+        if user.role == 'company' and changed_fields - {'status'}:
+            raise PermissionDenied("Une entreprise ne peut modifier que le statut de la candidature.")
+        serializer.save(
+            student=serializer.instance.student,
+            offre_stage=serializer.instance.offre_stage,
+        )
     
     @action(detail=False, methods=['get'], url_path='by-student/(?P<student_id>[^/.]+)')
     def by_student(self, request, student_id=None):
-        candidatures = self.queryset.filter(student_id=student_id)
+        candidatures = self.get_queryset().filter(student_id=student_id)
         serializer = self.get_serializer(candidatures, many=True)
         return Response(serializer.data)
     @action(detail=False, methods=['get'], url_path='by-company/(?P<company_id>[^/.]+)')
     def by_company(self, request, company_id=None):
-        candidatures = self.queryset.filter(offre_stage__company_id=company_id)
+        candidatures = self.get_queryset().filter(offre_stage__company_id=company_id)
         serializer = self.get_serializer(candidatures, many=True)
         return Response(serializer.data)
 
@@ -258,36 +429,118 @@ class AffectationStageViewSet(viewsets.ModelViewSet):
 class EvaluationViewSet(viewsets.ModelViewSet):
     queryset = Evaluation.objects.all()
     serializer_class = EvaluationSerializer
-    permission_classes = [IsStaffPermission]
+    permission_classes = [IsAuthenticated, IsRelatedObjectOwnerOrStaff]
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return Evaluation.objects.all()
+        company = company_for_user(self.request.user)
+        if company:
+            return Evaluation.objects.filter(candidature__offre_stage__company=company)
+        return Evaluation.objects.filter(candidature__student__user=self.request.user)
+
+    def _ensure_company_owns_candidature(self, candidature):
+        if self.request.user.is_staff:
+            return
+        if company_for_user(self.request.user) != candidature.offre_stage.company:
+            raise PermissionDenied("Seule l'entreprise concernée peut gérer cette évaluation.")
+
+    def perform_create(self, serializer):
+        candidature = serializer.validated_data.get('candidature')
+        if not candidature:
+            raise ValidationError("Candidature requise.")
+        self._ensure_company_owns_candidature(candidature)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._ensure_company_owns_candidature(serializer.instance.candidature)
+        serializer.save(candidature=serializer.instance.candidature)
+
+    def perform_destroy(self, instance):
+        self._ensure_company_owns_candidature(instance.candidature)
+        instance.delete()
     @action(detail=False, methods=['get'], url_path='by-candidature/(?P<candidature_id>[^/.]+)')
     def by_candidature(self, request, candidature_id=None):
-        evaluations = self.queryset.filter(candidature_id=candidature_id)
+        evaluations = self.get_queryset().filter(candidature_id=candidature_id)
         serializer = self.get_serializer(evaluations, many=True)
         return Response(serializer.data)
 
 class FormationViewSet(viewsets.ModelViewSet):
     queryset = Formation.objects.all()
     serializer_class = FormationSerializer
-    permission_classes = [IsStaffPermission]
+    permission_classes = [IsAuthenticated, IsRelatedObjectOwnerOrStaff]
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return Formation.objects.all()
+        company = company_for_user(self.request.user)
+        if company:
+            return Formation.objects.filter(
+                student__candidature__offre_stage__company=company
+            ).distinct()
+        return Formation.objects.filter(student__user=self.request.user)
+
+    def perform_create(self, serializer):
+        try:
+            serializer.save(student=Student.objects.get(user=self.request.user))
+        except Student.DoesNotExist:
+            raise PermissionDenied("Profil étudiant requis.")
+
+    def perform_update(self, serializer):
+        if not self.request.user.is_staff and serializer.instance.student.user_id != self.request.user.id:
+            raise PermissionDenied("Vous ne pouvez modifier que vos formations.")
+        serializer.save(student=serializer.instance.student)
+
+    def perform_destroy(self, instance):
+        if not self.request.user.is_staff and instance.student.user_id != self.request.user.id:
+            raise PermissionDenied("Vous ne pouvez supprimer que vos formations.")
+        instance.delete()
     @action(detail=False, methods=['get'], url_path='by-student/(?P<student_id>[^/.]+)')
     def by_student(self, request, student_id=None):
-        formations = self.queryset.filter(student_id=student_id)
+        formations = self.get_queryset().filter(student_id=student_id)
         serializer = self.get_serializer(formations, many=True)
         return Response(serializer.data)
 
 class CompetenceViewSet(viewsets.ModelViewSet):
     queryset = Competence.objects.all()
     serializer_class = CompetenceSerializer
-    permission_classes = [IsStaffPermission]
+    permission_classes = [IsAuthenticated, IsRelatedObjectOwnerOrStaff]
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return Competence.objects.all()
+        company = company_for_user(self.request.user)
+        if company:
+            return Competence.objects.filter(
+                student__candidature__offre_stage__company=company
+            ).distinct()
+        return Competence.objects.filter(student__user=self.request.user)
+
+    def perform_create(self, serializer):
+        try:
+            serializer.save(student=Student.objects.get(user=self.request.user))
+        except Student.DoesNotExist:
+            raise PermissionDenied("Profil étudiant requis.")
+
+    def perform_update(self, serializer):
+        if not self.request.user.is_staff and serializer.instance.student.user_id != self.request.user.id:
+            raise PermissionDenied("Vous ne pouvez modifier que vos compétences.")
+        serializer.save(student=serializer.instance.student)
+
+    def perform_destroy(self, instance):
+        if not self.request.user.is_staff and instance.student.user_id != self.request.user.id:
+            raise PermissionDenied("Vous ne pouvez supprimer que vos compétences.")
+        instance.delete()
     @action(detail=False, methods=['get'], url_path='by-student/(?P<student_id>[^/.]+)')
     def by_student(self, request, student_id=None):
-        competences = self.queryset.filter(student_id=student_id)
+        competences = self.get_queryset().filter(student_id=student_id)
         serializer = self.get_serializer(competences, many=True)
         return Response(serializer.data)
 
 class SubscriptionViewSet(viewsets.ReadOnlyModelViewSet):  # uniquement GET (list, retrieve)
     queryset = SubscriptionPlan.objects.all()
     serializer_class = SubscriptionPlanSerializer
+    permission_classes = [AllowAny]
 
     # serializer_class = CompanySubscriptionSerializer
     # permission_classes = [IsAuthenticated]
@@ -307,7 +560,7 @@ class CompanySubscriptionViewSet(viewsets.ModelViewSet):
         user = self.request.user
         company_user = CompanyUser.objects.filter(user=self.request.user, is_active=True).first()
 
-        if user.role != 'company':
+        if user.role != 'company' or not company_user:
             return CompanySubscription.objects.none()
         return CompanySubscription.objects.filter(company=company_user.company)
 
@@ -333,6 +586,8 @@ class CompanySubscriptionViewSet(viewsets.ModelViewSet):
             plan = SubscriptionPlan.objects.get(id=plan_id)
         except SubscriptionPlan.DoesNotExist:
             raise APIException(detail={"error": "Plan d'abonnement invalide."}, code=status.HTTP_400_BAD_REQUEST)
+        if plan.price > 0:
+            raise PermissionDenied("Un paiement vérifié est requis pour activer ce plan.")
 
         # Calcul de la date de fin (exemple : 30 jours)
         end_date = timezone.now() + timedelta(days=30)
@@ -365,6 +620,8 @@ class CompanySubscriptionViewSet(viewsets.ModelViewSet):
             new_plan = SubscriptionPlan.objects.get(id=plan_id)
         except SubscriptionPlan.DoesNotExist:
             raise APIException(detail={"error": "Plan invalide."}, code=status.HTTP_400_BAD_REQUEST)
+        if new_plan.price > 0:
+            raise PermissionDenied("Un paiement vérifié est requis pour modifier ce plan.")
 
         # ✅ Empêcher plusieurs changements planifiés
         if instance.next_plan:
@@ -474,7 +731,7 @@ class CompanySubscriptionViewSet(viewsets.ModelViewSet):
         return Response({"error": "Suppression non autorisée."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
-class  PaymentViewSet(viewsets.ModelViewSet):
+class PaymentViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
     permission_classes = [IsAuthenticated]
@@ -488,12 +745,139 @@ class  PaymentViewSet(viewsets.ModelViewSet):
             return Payment.objects.none()
         return Payment.objects.filter(company=company_user.company)
 
-    def perform_create(self, serializer):
-        user = self.request.user
-        company_user = CompanyUser.objects.filter(user=user, is_active=True).first()
-        if not company_user:
-            raise ValidationError("Aucune entreprise associée à ce compte.")
-        serializer.save(company=company_user.company)
+    @staticmethod
+    def _paypal_access_token():
+        client_id = getattr(settings, 'PAYPAL_CLIENT_ID', '')
+        client_secret = getattr(settings, 'PAYPAL_CLIENT_SECRET', '')
+        base_url = getattr(settings, 'PAYPAL_API_URL', 'https://api-m.paypal.com')
+        if not client_id or not client_secret:
+            raise APIException("Configuration PayPal absente.")
+        response = requests.post(
+            f"{base_url}/v1/oauth2/token",
+            auth=(client_id, client_secret),
+            data={'grant_type': 'client_credentials'},
+            timeout=15,
+        )
+        if not response.ok:
+            raise APIException("Impossible de vérifier le paiement PayPal.")
+        return base_url, response.json()['access_token']
+
+    @classmethod
+    def _verify_paypal(cls, order_id, expected_amount, company_id):
+        base_url, token = cls._paypal_access_token()
+        response = requests.get(
+            f"{base_url}/v2/checkout/orders/{order_id}",
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=15,
+        )
+        if not response.ok:
+            raise ValidationError("Commande PayPal introuvable.")
+        order = response.json()
+        captures = [
+            capture
+            for unit in order.get('purchase_units', [])
+            for capture in unit.get('payments', {}).get('captures', [])
+            if capture.get('status') == 'COMPLETED'
+        ]
+        if order.get('status') != 'COMPLETED' or not captures:
+            raise ValidationError("Le paiement PayPal n'est pas terminé.")
+        if any(unit.get('custom_id') != str(company_id) for unit in order.get('purchase_units', [])):
+            raise ValidationError("La commande PayPal appartient à une autre entreprise.")
+        try:
+            paid = sum(Decimal(c['amount']['value']) for c in captures)
+        except (KeyError, InvalidOperation):
+            raise ValidationError("Montant PayPal invalide.")
+        if paid != expected_amount or any(c['amount'].get('currency_code') != 'USD' for c in captures):
+            raise ValidationError("Le montant PayPal ne correspond pas au plan.")
+        return f"paypal:{order_id}"
+
+    @staticmethod
+    def _verify_stripe(payment_intent_id, expected_amount, company_id, plan_id):
+        secret = getattr(settings, 'STRIPE_SECRET_KEY', '')
+        if not secret:
+            raise APIException("Configuration Stripe absente.")
+        response = requests.get(
+            f"https://api.stripe.com/v1/payment_intents/{payment_intent_id}",
+            auth=(secret, ''),
+            timeout=15,
+        )
+        if not response.ok:
+            raise ValidationError("Paiement Stripe introuvable.")
+        payment = response.json()
+        expected_cents = int(expected_amount * 100)
+        if (
+            payment.get('status') != 'succeeded'
+            or payment.get('amount_received') != expected_cents
+            or payment.get('currency') != 'usd'
+            or payment.get('metadata', {}).get('company_id') != str(company_id)
+            or payment.get('metadata', {}).get('plan_id') != str(plan_id)
+        ):
+            raise ValidationError("Le paiement Stripe ne correspond pas au plan.")
+        return f"stripe:{payment_intent_id}"
+
+    @action(detail=False, methods=['post'], url_path='confirm')
+    def confirm(self, request):
+        company = company_for_user(request.user)
+        if not company:
+            raise PermissionDenied("Compte entreprise requis.")
+        try:
+            plan = SubscriptionPlan.objects.get(pk=request.data.get('plan_id'))
+        except (SubscriptionPlan.DoesNotExist, TypeError, ValueError):
+            raise ValidationError("Plan invalide.")
+
+        provider = request.data.get('provider')
+        external_id = request.data.get('transaction_id')
+        if plan.price == 0:
+            transaction_id = f"free:{company.pk}:{plan.pk}"
+        elif provider == 'paypal' and external_id:
+            transaction_id = self._verify_paypal(external_id, plan.price, company.pk)
+        elif provider == 'stripe' and external_id:
+            transaction_id = self._verify_stripe(external_id, plan.price, company.pk, plan.pk)
+        else:
+            raise ValidationError("Fournisseur ou identifiant de paiement invalide.")
+
+        with transaction.atomic():
+            payment, payment_created = Payment.objects.select_for_update().get_or_create(
+                transaction_id=transaction_id,
+                defaults={
+                    'company': company,
+                    'amount': plan.price,
+                    'status': 'success',
+                },
+            )
+            if payment.company_id != company.pk or payment.amount != plan.price:
+                raise PermissionDenied("Ce paiement est déjà associé à une autre opération.")
+            if not payment_created:
+                return Response({
+                    'message': 'Paiement déjà confirmé.',
+                    'payment': self.get_serializer(payment).data,
+                })
+
+            subscription, subscription_created = CompanySubscription.objects.select_for_update().get_or_create(
+                company=company,
+                defaults={
+                    'plan': plan,
+                    'end_date': timezone.now() + timedelta(days=plan.duration_days),
+                    'nbre_offres': plan.max_offres,
+                },
+            )
+            if subscription_created or subscription.plan_id != plan.pk or not subscription.is_active():
+                subscription.plan = plan
+                subscription.start_date = timezone.now()
+                subscription.end_date = timezone.now() + timedelta(days=plan.duration_days)
+                subscription.nbre_offres = plan.max_offres
+            else:
+                subscription.end_date += timedelta(days=plan.duration_days)
+                if subscription.nbre_offres is not None and plan.max_offres is not None:
+                    subscription.nbre_offres += plan.max_offres
+            subscription.next_plan = None
+            subscription.change_effective_date = None
+            subscription.save()
+
+        return Response({
+            'message': 'Paiement vérifié et abonnement activé.',
+            'payment': self.get_serializer(payment).data,
+        }, status=status.HTTP_201_CREATED if payment_created else status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'], url_path='by-company')
     def by_company(self, request):
@@ -515,3 +899,4 @@ class  PaymentViewSet(viewsets.ModelViewSet):
 class ConfigViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Config.objects.all()
     serializer_class = ConfigSerializer
+    permission_classes = [AllowAny]

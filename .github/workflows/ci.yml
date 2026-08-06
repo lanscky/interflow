@@ -1,0 +1,28 @@
+name: Backend CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python manage.py makemigrations --check --dry-run --settings=project.settings_test
+      - run: python manage.py test --settings=project.settings_test
+      - run: python manage.py check --deploy
+        env:
+          DEBUG: "false"
+          SECRET_KEY: ci-only-secret-key-with-more-than-fifty-characters-123456789
+          ALLOWED_HOSTS: backend.totinda.com
+          MYSQL_DATABASE: ci
+          MYSQL_USER: ci
+          MYSQL_PASSWORD: ci
+          SECURE_HSTS_INCLUDE_SUBDOMAINS: "true"
+          SECURE_HSTS_PRELOAD: "true"

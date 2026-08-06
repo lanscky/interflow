@@ -5,4 +5,15 @@ __pycache__/
 # Ignorer les environnements virtuels
 env/
 venv/
-deploy/
+deploy/.env
+.env
+project/.env
+.DS_Store
+*.sql
+backups/
+letsencrypt/
+media/
+staticfiles/
+.coverage
+htmlcov/
+.pytest_cache/

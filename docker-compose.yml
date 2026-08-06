@@ -1,304 +1,111 @@
-#version: '3.9'
-
 services:
   web:
     build: .
-    container_name: totinda
     command: gunicorn project.wsgi:application --bind 0.0.0.0:8000
-    volumes:
-      - .:/app
-      - media_data:/app/media
-      - static_data:/app/static
-    env_file:
-      - .env
-    depends_on:
-      - db
-      - redis
+    env_file: [.env]
+    depends_on: [db, redis]
     restart: unless-stopped
+    volumes:
+      - static_data:/app/staticfiles
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.web.rule=Host(`backend.totinda.com`)"
-      - "traefik.http.routers.web.entrypoints=websecure"
-      - "traefik.http.routers.web.tls.certresolver=myresolver"
-      - "traefik.http.services.web.loadbalancer.server.port=8000"
-
-      # Router HTTP pour redirection
-      - "traefik.http.routers.web-http.rule=Host(`backend.totinda.com`)"
-      - "traefik.http.routers.web-http.entrypoints=web"
-      - "traefik.http.routers.web-http.middlewares=redirect-to-https"
-      
-      # Middleware de redirection
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - traefik.enable=true
+      - traefik.http.routers.totinda-api.rule=Host(`backend.totinda.com`)
+      - traefik.http.routers.totinda-api.entrypoints=websecure
+      - traefik.http.routers.totinda-api.tls.certresolver=myresolver
+      - traefik.http.services.totinda-api.loadbalancer.server.port=8000
+      - traefik.http.routers.totinda-api-http.rule=Host(`backend.totinda.com`)
+      - traefik.http.routers.totinda-api-http.entrypoints=web
+      - traefik.http.routers.totinda-api-http.middlewares=redirect-to-https
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.docker.network=totinda_proxy
+    networks: [internal, proxy]
 
   db:
     image: mysql:8.1
-    container_name: mysql_db
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-    ports:
-      - "3336:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     restart: unless-stopped
-
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin:latest
-    container_name: phpmyadmin
-    platform: linux/amd64
-    environment:
-      PMA_HOST: db
-      PMA_PORT: 3306
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-    ports:
-      - "8888:80"
-    depends_on:
-      - db
-    restart: unless-stopped
+    networks: [internal]
 
   redis:
-    image: redis:7
-    container_name: redis_broker
-    ports:
-      - "6379:6379"
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
     restart: unless-stopped
+    networks: [internal]
 
   celery_worker:
     build: .
-    container_name: celery_worker
     command: celery -A project worker --loglevel=info
-    volumes:
-      - .:/app
-    env_file:
-      - .env
-    depends_on:
-      - redis
-      - db
-      - web
+    env_file: [.env]
+    depends_on: [redis, db]
     restart: unless-stopped
+    networks: [internal]
 
-  celery-beat:
+  celery_beat:
     build: .
-    container_name: celery_beat
     command: celery -A project beat --loglevel=info
-    volumes:
-      - .:/app
-    env_file:
-      - .env
-    depends_on:
-      - redis
-      - db
-      - web
+    env_file: [.env]
+    depends_on: [redis, db]
     restart: unless-stopped
+    networks: [internal]
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    profiles: [tools]
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+    ports:
+      - 127.0.0.1:8888:80
+    depends_on: [db]
+    networks: [internal]
 
   flower:
-    image: mher/flower
-    container_name: flower_monitor
+    image: mher/flower:2.0
+    profiles: [tools]
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - FLOWER_BASIC_AUTH=${FLOWER_BASIC_AUTH}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH}
     ports:
-      - "5555:5555"
-    depends_on:
-      - redis
-      - celery_worker
-    restart: unless-stopped
+      - 127.0.0.1:5555:5555
+    depends_on: [redis, celery_worker]
+    networks: [internal]
 
   traefik:
-    image: traefik:v2.10
-    container_name: traefik
+    image: traefik:v2.11
     command:
-      - "--api.dashboard=true"
-      - "--providers.docker=true"
-      - "--api.insecure=true" # ⚠️ Ne pas utiliser en prod (donne accès sans mot de passe)
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
-      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.myresolver.acme.email=lansckytshinkola9@gmail.com"
-      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - --api.dashboard=false
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=totinda_proxy
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.myresolver.acme.httpchallenge=true
+      - --certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.myresolver.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json
     ports:
-      - "80:80"
-      - "443:443"
-      - "8080:8080" # Dashboard Traefik
+      - 80:80
+      - 443:443
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-      - "./letsencrypt:/letsencrypt"
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./letsencrypt:/letsencrypt
     restart: unless-stopped
+    networks: [proxy]
 
 volumes:
   mysql_data:
-  media_data:
+  redis_data:
   static_data:
-  letsencrypt:
 
-
-
-
-
-
-
-# #version: '3.9'
-
-# services:
-#   web:
-#     build: .
-#     container_name: totinda
-#     command: gunicorn project.wsgi:application --bind 0.0.0.0:8000
-#     #command: /start.sh
-#     volumes:
-#       - .:/app
-#       - media_data:/app/media
-#       - static_data:/app/static
-#     # expose:
-#     #   - "8000":
-#     ports:
-#       - "8000:8000"
-#     env_file:
-#       - .env
-#     depends_on:
-#       - db
-#       - redis
-#     restart: unless-stopped
-
-#   db:
-#     image: mysql:8.1
-#     container_name: mysql_db
-#     environment:
-#       MYSQL_DATABASE: ${MYSQL_DATABASE}
-#       MYSQL_USER: ${MYSQL_USER}
-#       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-#       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-#     ports:
-#       - "3306:3306"
-#     volumes:
-#       - mysql_data:/var/lib/mysql
-#     restart: unless-stopped
-
-#   phpmyadmin:
-#     image: phpmyadmin/phpmyadmin:latest
-#     container_name: phpmyadmin
-#     platform: linux/amd64
-#     environment:
-#       PMA_HOST: db
-#       PMA_PORT: 3306
-#       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-#     ports:
-#       - "8888:80"
-#     depends_on:
-#       - db
-#     restart: unless-stopped
-
-
-#   redis:
-#     image: redis:7
-#     container_name: redis_broker
-#     ports:
-#       - "6379:6379"
-#     restart: unless-stopped
-
-#   celery:
-#     build: .
-#     container_name: celery_worker
-#     command: celery -A project worker --loglevel=info
-#     volumes:
-#       - .:/app
-#     env_file:
-#       - .env
-#     depends_on:
-#       - redis
-#       - db
-#       - web
-#     restart: unless-stopped
-#   celery_worker:
-#     build: .
-#     command: celery -A project worker -l info
-#     volumes:
-#       - .:/app
-#     depends_on:
-#       - web
-#       - redis
-#     restart: unless-stopped
-#   celery-beat:
-#     build: .
-#     container_name: celery_beat
-#     command: celery -A project beat --loglevel=info
-#     volumes:
-#       - .:/app
-#     env_file:
-#       - .env
-#     depends_on:
-#       - redis
-#       - db
-#       - web
-#     restart: unless-stopped
-#   nginx:
-#     image: nginx:latest
-#     container_name: nginx_reverse_proxy
-#     ports:
-#       - "80:80"
-#       - "443:443"
-#     volumes:
-#       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-#       - ./certbot/conf:/etc/letsencrypt
-#       - ./certbot/www:/var/www/certbot
-#       - media_data:/app/media
-#       - static_data:/app/static
-
-#     depends_on:
-#       - web
-#     restart: unless-stopped
-#   flower:
-#     image: mher/flower
-#     container_name: flower_monitor
-#     environment:
-#       - CELERY_BROKER_URL=redis://redis:6379/0
-#       - FLOWER_BASIC_AUTH=${FLOWER_BASIC_AUTH}
-#     ports:
-#       - "5555:5555"
-#     depends_on:
-#       - redis
-#       - celery_worker
-
-#   certbot:
-#     image: certbot/certbot
-#     container_name: certbot
-#     volumes:
-#       - ./certbot/conf:/etc/letsencrypt
-#       - ./certbot/www:/var/www/certbot
-  
-
-#     entrypoint: certbot certonly --webroot -w /var/www/certbot --force-renewal --email lansckytshinkola9@gmail.com -d backend.totinda.com --agree-tos
-
-#   backup:
-#     image: mysql:8.1
-#     container_name: mysql_backup
-#     volumes:
-#       - ./backups:/backups
-#     env_file:
-#       - .env
-#     entrypoint: >
-#       sh -c "mysqldump -h db -u ${MYSQL_USER} -p${MYSQL_PASSWORD} ${MYSQL_DATABASE} > /backups/backup_$(date +%Y%m%d_%H%M%S).sql"
-#     depends_on:
-#       - db
-# volumes:
-#   mysql_data:
-#   media_data:
-#   static_data:
-#   certbot-etc:
-#   certbot-www:
-
-
-#Démarre tous les services sauf certbot :
-#docker-compose up -d web db nginx
-#Pour générer les certificats SSL avec certbot :
-#docker-compose run --rm certbot 
-#Pour recharger les certificats SSL :
-#docker-compose exec nginx nginx -s reload
-#Pour arrêter tous les services :
-#docker-compose down
-#Pour reconstruire l'image web :
-
-#docker exec -t postgres_db pg_dump -U django_user django_db > backup_$(date +%Y%m%d_%H%M%S).sql
+networks:
+  internal:
+  proxy:
+    name: totinda_proxy

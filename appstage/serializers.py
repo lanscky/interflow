@@ -109,22 +109,18 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username','postnom', 'prenom', 'email', 'password', 'role', 'is_superuser', 'is_staff','telephone', 'profile_picture']
+        fields = ['id', 'username','postnom', 'prenom', 'email', 'password', 'role','telephone', 'profile_picture']
         extra_kwargs = {
             'password': {'write_only': True},
-            'is_superuser': {'write_only': True},
-            'is_staff': {'write_only': True},
+            'role': {'read_only': True},
         }
 
     def create(self, validated_data):
         password = validated_data.pop('password')
-        is_superuser = validated_data.pop('is_superuser', False)
-        is_staff = validated_data.pop('is_staff', False)
-
         user = User(**validated_data)
         user.set_password(password)
-        user.is_superuser = is_superuser
-        user.is_staff = is_staff
+        user.is_superuser = False
+        user.is_staff = False
         user.is_active = False
         user.save()
 
@@ -135,6 +131,14 @@ class UserSerializer(serializers.ModelSerializer):
         send_activation_email.delay(user.email, user.username, activation_link)
 
         return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        instance = super().update(instance, validated_data)
+        if password:
+            instance.set_password(password)
+            instance.save(update_fields=['password'])
+        return instance
 
 
 class SchoolSerializer(serializers.ModelSerializer):
@@ -156,6 +160,8 @@ class SchoolUserSerializer(serializers.ModelSerializer):
         school, _ = School.objects.get_or_create(
             name=school_data['name'], defaults={"address": school_data['address'], "contact_email": school_data['contact_email']})
         user_data['role'] = 'school'
+        user_data.pop('is_staff', None)
+        user_data.pop('is_superuser', None)
         user = User.objects.create_user(**user_data)
         school_user = SchoolUser.objects.create(user=user, school=school, **validated_data)
         return school_user
@@ -180,6 +186,8 @@ class CompanyUserSerializer(serializers.ModelSerializer):
         company, _ = Company.objects.get_or_create(name=company_data['name'], defaults={"secteur": company_data['secteur'], "description": company_data['description']})
         user_data['role'] = 'company'
         user_data['is_active'] = False  # L'utilisateur n'est pas actif par défaut
+        user_data.pop('is_staff', None)
+        user_data.pop('is_superuser', None)
         user = User.objects.create_user(**user_data)
         company_user = CompanyUser.objects.create(user=user, company=company, **validated_data)
 
@@ -203,6 +211,8 @@ class StudentSerializer(serializers.ModelSerializer):
         user_data = validated_data.pop('user')
         user_data['role'] = 'student'
         user_data['is_active'] = False  # L'utilisateur n'est pas actif par défaut
+        user_data.pop('is_staff', None)
+        user_data.pop('is_superuser', None)
         user = User.objects.create_user(**user_data)
         student = Student.objects.create(user=user, **validated_data)
 
@@ -231,6 +241,7 @@ class CandidatureSerializer(serializers.ModelSerializer):
     class Meta:
         model = Candidature
         fields = '__all__'
+        read_only_fields = ['student']
 
 class AffectationStageSerializer(serializers.ModelSerializer):
     class Meta:
