@@ -15,12 +15,11 @@ from celery import platforms
 platforms.C_FORCE_ROOT = True
 
 
-# app.conf.beat_schedule = {
-#     'activate-next-plan-every-midnight': {
-#         'task': 'appstage.tasks.activate_next_plan',
-#         'schedule': crontab(minute=0, hour=0),  # 00:00 tous les jours
-#         'options': {'timezone': 'Africa/Kinshasa'},  # facultatif si TIMEZONE déjà configuré
-#     },
-# }
+app.conf.beat_schedule = {
+    'weekly-stage-report-reminders': {
+        'task': 'appstage.tasks.create_weekly_stage_reminders',
+        'schedule': crontab(minute=0, hour=8, day_of_week='monday'),
+    },
+}
 
 #app.conf.timezone = 'Africa/Kinshasa'

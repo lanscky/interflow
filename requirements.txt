@@ -51,8 +51,10 @@ wcwidth==0.2.13
 whitenoise==6.9.0
 mysql-connector-python==9.4.0
 redis==6.4.0
+reportlab==4.4.3
 django-redis==6.0.0
 channels-redis==4.2.1
 boto3==1.40.40
 django-storages==1.14.6
+google-auth==2.40.3
 python-decouple==3.8

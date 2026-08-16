@@ -22,6 +22,7 @@ import dj_database_url
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = BASE_DIR / '.env'
 config = Config(RepositoryEnv(str(ENV_FILE))) if ENV_FILE.exists() else AutoConfig(search_path=BASE_DIR)
+PUBLIC_SITE_URL = config("PUBLIC_SITE_URL", default="https://totinda.com").rstrip("/")
 
 
 # Quick-start development settings - unsuitable for production
@@ -309,6 +310,12 @@ PAYPAL_API_URL = config('PAYPAL_API_URL', default='https://api-m.paypal.com')
 PAYPAL_CLIENT_ID = config('PAYPAL_CLIENT_ID', default='')
 PAYPAL_CLIENT_SECRET = config('PAYPAL_CLIENT_SECRET', default='')
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
+EXPO_PUSH_URL = config('EXPO_PUSH_URL', default='https://exp.host/--/api/v2/push/send')
+GOOGLE_OAUTH_CLIENT_IDS = [
+    client_id.strip()
+    for client_id in config('GOOGLE_OAUTH_CLIENT_IDS', default='').split(',')
+    if client_id.strip()
+]
 
 
 # Configuration aws s3

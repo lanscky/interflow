@@ -4,6 +4,11 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
 from datetime import timedelta
+import secrets
+
+
+def generate_certificate_reference():
+    return f"TOT-{secrets.token_hex(8).upper()}"
 
 # 1. Utilisateur générique avec rôle
 class User(AbstractUser):
@@ -25,12 +30,39 @@ class User(AbstractUser):
     REQUIRED_FIELDS = ['username']
 
 
+class SocialIdentity(models.Model):
+    PROVIDER_GOOGLE = 'google'
+    PROVIDER_CHOICES = ((PROVIDER_GOOGLE, 'Google'),)
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='social_identities')
+    provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES)
+    provider_user_id = models.CharField(max_length=255)
+    email_at_link = models.EmailField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['provider', 'provider_user_id'],
+                name='unique_social_provider_identity',
+            ),
+            models.UniqueConstraint(
+                fields=['user', 'provider'],
+                name='unique_social_provider_per_user',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.provider} - {self.user.email}"
+
+
 # 2. Profil étudiant
 class Student(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     school = models.ForeignKey('School', on_delete=models.SET_NULL, null=True)
-    filiere = models.CharField(max_length=100) # ex: Informatique, Mathématiques, etc.
-    niveau = models.CharField(max_length=50)  # ex: Licence 3, Master 1, etc.
+    filiere = models.CharField(max_length=100, blank=True, default='') # ex: Informatique, Mathématiques, etc.
+    niveau = models.CharField(max_length=100, blank=True, default='')  # ex: Licence 3, Master 1, etc.
     cv = models.FileField(upload_to='cvs/', null=True, blank=True)
 
     def __str__(self):
@@ -86,6 +118,7 @@ class Company(models.Model):
     name = models.CharField(max_length=150)
     secteur = models.CharField(max_length=100)
     description = models.TextField()
+    logo = models.ImageField(upload_to='company_logos/', null=True, blank=True)
 
 class CompanyUser(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='company_user')  # rôle "company"
@@ -136,20 +169,192 @@ class Candidature(models.Model):
         ('accepted', 'Acceptée'),
         ('rejected', 'Rejetée'),
     ], default='pending')
+    company_message = models.TextField(blank=True, default='')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_candidatures',
+    )
     def __str__(self):
         return f"{self.student.user.username} - {self.offre_stage.title} ({self.status})"
 
 
 # 7. Stage validé
 class AffectationStage(models.Model):
+    STATUS_CHOICES = [
+        ('upcoming', 'À venir'),
+        ('in_progress', 'En cours'),
+        ('completed', 'Terminé'),
+        ('cancelled', 'Interrompu'),
+    ]
+
+    candidature = models.OneToOneField(
+        Candidature,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='affectation',
+    )
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
     offre_stage = models.ForeignKey(OffreStage, on_delete=models.CASCADE)
     assigned_on = models.DateTimeField(auto_now_add=True)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='upcoming')
+    objectives = models.TextField(blank=True, default='')
     convention_pdf = models.FileField(upload_to='conventions/', null=True, blank=True)
     supervisor_name = models.CharField(max_length=150, null=True, blank=True)
     supervisor_email = models.EmailField(null=True, blank=True)
     def __str__(self):
         return f"{self.student.user.username} - {self.offre_stage.title} (Affecté le {self.assigned_on})"
+
+
+class StageWeeklyReport(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Brouillon'),
+        ('submitted', 'Soumis'),
+        ('validated', 'Validé'),
+    ]
+
+    affectation = models.ForeignKey(
+        AffectationStage,
+        on_delete=models.CASCADE,
+        related_name='weekly_reports',
+    )
+    week_start = models.DateField()
+    activities = models.TextField()
+    learnings = models.TextField(blank=True, default='')
+    difficulties = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    company_comment = models.TextField(blank=True, default='')
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    validated_at = models.DateTimeField(null=True, blank=True)
+    validated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='validated_stage_reports',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-week_start', '-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['affectation', 'week_start'],
+                name='unique_stage_report_per_week',
+            ),
+        ]
+
+    def __str__(self):
+        return f"Semaine du {self.week_start} - {self.affectation.student.user.username}"
+
+
+class StageCertificate(models.Model):
+    affectation = models.ForeignKey(
+        AffectationStage,
+        on_delete=models.CASCADE,
+        related_name='certificates',
+    )
+    reference = models.CharField(
+        max_length=24,
+        unique=True,
+        default=generate_certificate_reference,
+        editable=False,
+    )
+    issued_at = models.DateTimeField(auto_now_add=True)
+    version = models.PositiveIntegerField(default=1)
+    data_hash = models.CharField(max_length=64, blank=True, default='')
+    verification_count = models.PositiveIntegerField(default=0)
+    last_verified_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='revoked_stage_certificates',
+    )
+    revocation_reason = models.TextField(blank=True, default='')
+
+    class Meta:
+        ordering = ['-issued_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['affectation', 'version'],
+                name='unique_stage_certificate_version',
+            ),
+        ]
+
+    @property
+    def is_valid(self):
+        return self.revoked_at is None
+
+    def __str__(self):
+        return self.reference
+
+
+class Notification(models.Model):
+    TYPE_CHOICES = [
+        ('application_decision', 'Décision de candidature'),
+        ('report_submitted', 'Rapport soumis'),
+        ('report_validated', 'Rapport validé'),
+        ('evaluation_published', 'Évaluation publiée'),
+        ('weekly_reminder', 'Rappel hebdomadaire'),
+    ]
+
+    recipient = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='notifications',
+    )
+    notification_type = models.CharField(max_length=40, choices=TYPE_CHOICES)
+    title = models.CharField(max_length=180)
+    message = models.TextField()
+    data = models.JSONField(default=dict, blank=True)
+    unique_key = models.CharField(max_length=180, unique=True, null=True, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    @property
+    def is_read(self):
+        return self.read_at is not None
+
+    def __str__(self):
+        return f"{self.recipient.email} - {self.title}"
+
+
+class PushDevice(models.Model):
+    PLATFORM_CHOICES = [
+        ('android', 'Android'),
+        ('ios', 'iOS'),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='push_devices',
+    )
+    expo_push_token = models.CharField(max_length=255, unique=True)
+    platform = models.CharField(max_length=10, choices=PLATFORM_CHOICES)
+    is_active = models.BooleanField(default=True)
+    last_error = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"{self.user.email} - {self.platform}"
 
 
 

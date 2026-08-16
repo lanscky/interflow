@@ -1,13 +1,13 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin 
 from django.contrib.auth.forms import UserCreationForm
-from .models import User, Student, School, SchoolUser, Company,CompanyUser, OffreStage, Candidature, AffectationStage, Evaluation, Competence, Formation, CompanySubscription, SubscriptionPlan, Payment, Config
+from .models import User, Student, SocialIdentity, School, SchoolUser, Company,CompanyUser, OffreStage, Candidature, AffectationStage, StageWeeklyReport, StageCertificate, Notification, PushDevice, Evaluation, Competence, Formation, CompanySubscription, SubscriptionPlan, Payment, Config
 # Register your models here.
 
 class CustomUserAdmin(UserAdmin):
     add_form = UserCreationForm
-    list_display = ('id', 'username', 'is_active', 'email', 'first_name', 'last_name', 'role')
-    search_fields = ('username', 'email', 'first_name', 'last_name')
+    list_display = ('id', 'username', 'is_active', 'email', 'postnom', 'prenom', 'role')
+    search_fields = ('username', 'email', 'postnom', 'prenom')
     list_filter = ('role',)
     add_fieldsets = (
         (None, {
@@ -17,7 +17,7 @@ class CustomUserAdmin(UserAdmin):
     )
     fieldsets = UserAdmin.fieldsets + (
         ('Informations personnalisées', {
-            'fields': ('role', 'telephone','profile_picture'),
+            'fields': ('postnom', 'prenom','role', 'telephone','profile_picture'),
         }),
     )
 class OffreStageAdmin(admin.ModelAdmin):
@@ -27,10 +27,22 @@ class OffreStageAdmin(admin.ModelAdmin):
     ordering = ('-start_date',)
 
 class CandidatureAdmin(admin.ModelAdmin):
-    list_display = ('id', 'student', 'offre_stage', 'status', 'created_at')
+    list_display = ('id', 'student', 'offre_stage', 'status', 'reviewed_at', 'created_at')
     search_fields = ('student__user__username', 'offre_stage__title')
     list_filter = ('status', 'created_at')
     ordering = ('-created_at',)
+
+class AffectationStageAdmin(admin.ModelAdmin):
+    list_display = ('id', 'student', 'offre_stage', 'status', 'start_date', 'end_date', 'assigned_on')
+    search_fields = ('student__user__username', 'student__user__email', 'offre_stage__title')
+    list_filter = ('status', 'start_date', 'end_date')
+    ordering = ('-assigned_on',)
+
+class StageWeeklyReportAdmin(admin.ModelAdmin):
+    list_display = ('id', 'affectation', 'week_start', 'status', 'submitted_at', 'validated_at')
+    search_fields = ('affectation__student__user__email', 'affectation__offre_stage__title')
+    list_filter = ('status', 'week_start')
+    ordering = ('-week_start',)
     
 class CompanyAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'secteur')
@@ -51,13 +63,18 @@ class PaymentAdmin(admin.ModelAdmin):
     ordering = ('-created_at',) 
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(Student, admin.ModelAdmin)  # Assuming StudentAdmin is not defined, using default ModelAdmin
+admin.site.register(SocialIdentity, admin.ModelAdmin)
 admin.site.register(School, admin.ModelAdmin)  # Assuming SchoolAdmin is not defined, using default ModelAdmin
 admin.site.register(SchoolUser, admin.ModelAdmin)  # Assuming SchoolUserAdmin is not defined, using default ModelAdmin
 admin.site.register(Company, CompanyAdmin)  # Assuming CompanyAdmin is not defined, using default ModelAdmin
 admin.site.register(CompanyUser, admin.ModelAdmin)  # Assuming CompanyUserAdmin is not defined, using default ModelAdmin
 admin.site.register(OffreStage, OffreStageAdmin)  # Using the defined OffreStageAdmin
 admin.site.register(Candidature, CandidatureAdmin)  # Using the defined CandidatureAdmin
-admin.site.register(AffectationStage, admin.ModelAdmin)  # Assuming AffectationStageAdmin is not defined, using default ModelAdmin
+admin.site.register(AffectationStage, AffectationStageAdmin)
+admin.site.register(StageWeeklyReport, StageWeeklyReportAdmin)
+admin.site.register(StageCertificate, admin.ModelAdmin)
+admin.site.register(Notification, admin.ModelAdmin)
+admin.site.register(PushDevice, admin.ModelAdmin)
 admin.site.register(Evaluation, admin.ModelAdmin)  # Assuming EvaluationAdmin is not defined, using default ModelAdmin
 admin.site.register(Competence, admin.ModelAdmin)  # Assuming CompetenceAdmin is not defined, using default ModelAdmin
 admin.site.register(Formation, admin.ModelAdmin)  # Assuming FormationAdmin is not defined, using default ModelAdmin

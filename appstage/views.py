@@ -3,23 +3,26 @@ from rest_framework import viewsets, authentication,status
 from rest_framework.permissions import AllowAny, IsAuthenticated, SAFE_METHODS
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import (
-    User, Student, School, SchoolUser,
+    User, Student, SocialIdentity, School, SchoolUser,
     Company, CompanyUser, OffreStage,
-    Candidature, AffectationStage, Evaluation, Formation, Competence, CompanySubscription, SubscriptionPlan, Payment, Config
+    Candidature, AffectationStage, StageWeeklyReport, StageCertificate, Notification, PushDevice, Evaluation, Formation, Competence, CompanySubscription, SubscriptionPlan, Payment, Config
 )
 from .serializers import (
     UserSerializer, StudentSerializer, SchoolSerializer, SchoolUserSerializer,
     CompanySerializer, CompanyUserSerializer, OffreStageSerializer,
-    CandidatureSerializer, AffectationStageSerializer, EvaluationSerializer, 
-    CustomTokenObtainPairSerializer, FormationSerializer, CompetenceSerializer, 
+    CandidatureSerializer, AffectationStageSerializer, StageWeeklyReportSerializer, NotificationSerializer, PushDeviceSerializer, EvaluationSerializer,
+    CustomTokenObtainPairSerializer, StudentProfileUpdateSerializer,
+    GoogleAuthSerializer, serialize_user_for_session, FormationSerializer, CompetenceSerializer,
     CompanySubscriptionSerializer, PaymentSerializer, SubscriptionPlanSerializer, ConfigSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 # Surcharge de la methode d'authentification JWT pour inclure des informations utilisateur
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import CustomTokenObtainPairSerializer
 from rest_framework.response import Response                                                      
 from rest_framework.decorators import action   
+from rest_framework.views import APIView
 from .permissions import IsStaffPermission, IsRelatedObjectOwnerOrStaff, company_for_user
                                                
 from rest_framework.exceptions import PermissionDenied, ValidationError, APIException
@@ -32,12 +35,19 @@ from .utils import decode_activation_token
 from .utils import generate_activation_token
 from .tasks import send_activation_email
 from django.contrib.auth.password_validation import validate_password
-from django.db.models import Count
+from django.db.models import Count, F, Max
+from django.core.exceptions import ObjectDoesNotExist
+from .documents import build_stage_certificate, certificate_data_hash
+from .notifications import notify_company, notify_user
 from django.db import transaction
 from decimal import Decimal, InvalidOperation
+import base64
 import logging
 import requests
 from django.conf import settings
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
+from .profiles import student_profile_completion
 
 
 logger = logging.getLogger(__name__)
@@ -47,6 +57,132 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
 # Fin de la surcharge de la methode d'authentification JWT
+
+
+class GoogleConfigurationError(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "La connexion Google n'est pas configurée sur le serveur."
+
+
+class GoogleLoginView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    @staticmethod
+    def _verify_google_token(token):
+        allowed_client_ids = settings.GOOGLE_OAUTH_CLIENT_IDS
+        if not allowed_client_ids:
+            raise GoogleConfigurationError()
+        try:
+            claims = google_id_token.verify_oauth2_token(
+                token,
+                google_requests.Request(),
+            )
+        except ValueError as exc:
+            raise ValidationError({"detail": "Jeton Google invalide ou expiré."}) from exc
+
+        if claims.get('aud') not in allowed_client_ids:
+            raise ValidationError({"detail": "Ce jeton Google n'est pas destiné à Totinda."})
+        if not claims.get('email_verified'):
+            raise ValidationError({"detail": "L'adresse e-mail Google n'est pas vérifiée."})
+        if not claims.get('sub') or not claims.get('email'):
+            raise ValidationError({"detail": "Le compte Google ne fournit pas les informations requises."})
+        return claims
+
+    def post(self, request):
+        serializer = GoogleAuthSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        claims = self._verify_google_token(serializer.validated_data['id_token'])
+        provider_user_id = claims['sub']
+        email = claims['email'].strip().lower()
+        password = serializer.validated_data.get('password')
+
+        with transaction.atomic():
+            identity = SocialIdentity.objects.select_related('user').filter(
+                provider=SocialIdentity.PROVIDER_GOOGLE,
+                provider_user_id=provider_user_id,
+            ).first()
+
+            if identity:
+                user = identity.user
+                if user.email.lower() != email:
+                    identity.email_at_link = email
+                    identity.save(update_fields=['email_at_link', 'updated_at'])
+            else:
+                user = User.objects.select_for_update().filter(email__iexact=email).first()
+                if user:
+                    if user.role != 'student':
+                        return Response(
+                            {"detail": "Cette adresse appartient à un compte non étudiant."},
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+                    if not user.is_active:
+                        return Response(
+                            {"detail": "Activez d'abord votre compte existant par e-mail."},
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+                    if not password:
+                        return Response(
+                            {
+                                "code": "account_link_required",
+                                "detail": "Saisissez le mot de passe du compte Totinda existant pour le lier à Google.",
+                            },
+                            status=status.HTTP_409_CONFLICT,
+                        )
+                    if not user.has_usable_password() or not user.check_password(password):
+                        return Response(
+                            {
+                                "code": "account_link_required",
+                                "detail": "Mot de passe Totinda incorrect.",
+                            },
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    if user.social_identities.filter(
+                        provider=SocialIdentity.PROVIDER_GOOGLE,
+                    ).exists():
+                        return Response(
+                            {"detail": "Ce compte Totinda est déjà lié à un autre compte Google."},
+                            status=status.HTTP_409_CONFLICT,
+                        )
+                else:
+                    username = (
+                        claims.get('family_name')
+                        or claims.get('name')
+                        or email.split('@', 1)[0]
+                    ).strip()[:150]
+                    user = User(
+                        email=email,
+                        username=username,
+                        prenom=str(claims.get('given_name') or '').strip()[:150],
+                        postnom='',
+                        role='student',
+                        is_active=True,
+                        is_staff=False,
+                        is_superuser=False,
+                    )
+                    user.set_unusable_password()
+                    user.save()
+                    Student.objects.create(user=user)
+
+                SocialIdentity.objects.create(
+                    user=user,
+                    provider=SocialIdentity.PROVIDER_GOOGLE,
+                    provider_user_id=provider_user_id,
+                    email_at_link=email,
+                )
+
+        if user.role != 'student' or not user.is_active:
+            return Response(
+                {"detail": "Accès réservé aux comptes étudiants actifs."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'user': serialize_user_for_session(user, request),
+        })
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -68,6 +204,48 @@ class UserViewSet(viewsets.ModelViewSet):
         if self.request.user.is_staff:
             return User.objects.all()
         return User.objects.filter(pk=self.request.user.pk)
+
+    def perform_update(self, serializer):
+        previous_picture = serializer.instance.profile_picture
+        user = serializer.save()
+        if previous_picture and previous_picture.name != getattr(user.profile_picture, 'name', None):
+            storage = previous_picture.storage
+            name = previous_picture.name
+
+            def delete_previous_picture():
+                try:
+                    storage.delete(name)
+                except Exception:
+                    logger.exception("Échec de suppression de l'ancienne photo de profil: %s", name)
+
+            transaction.on_commit(delete_previous_picture)
+
+    @action(detail=False, methods=['get'], url_path='me')
+    def me(self, request):
+        return Response(serialize_user_for_session(request.user, request))
+
+    @action(detail=False, methods=['patch'], url_path='complete-student-profile')
+    def complete_student_profile(self, request):
+        if request.user.role != 'student':
+            raise PermissionDenied("Accès réservé aux étudiants.")
+
+        serializer = StudentProfileUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        with transaction.atomic():
+            user = User.objects.select_for_update().get(pk=request.user.pk)
+            user.username = data['username']
+            user.postnom = data['postnom']
+            user.prenom = data['prenom']
+            user.telephone = data['telephone']
+            user.save(update_fields=['username', 'postnom', 'prenom', 'telephone'])
+            student, _created = Student.objects.select_for_update().get_or_create(user=user)
+            student.filiere = data['filiere']
+            student.niveau = data['niveau']
+            student.save(update_fields=['filiere', 'niveau'])
+
+        return Response(serialize_user_for_session(user, request))
 
     @staticmethod
     def _account_files(user):
@@ -249,6 +427,22 @@ class CompanyViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         return super().get_permissions()
 
+    def perform_update(self, serializer):
+        previous_logo = serializer.instance.logo
+        company = serializer.save()
+        if previous_logo and previous_logo.name != getattr(company.logo, 'name', None):
+            storage = previous_logo.storage
+            name = previous_logo.name
+            transaction.on_commit(lambda: storage.delete(name))
+
+    def perform_destroy(self, instance):
+        logo = instance.logo
+        storage = logo.storage if logo else None
+        name = logo.name if logo else None
+        instance.delete()
+        if storage and name:
+            transaction.on_commit(lambda: storage.delete(name))
+
 class CompanyUserViewSet(viewsets.ModelViewSet):
     queryset = CompanyUser.objects.all()
     serializer_class = CompanyUserSerializer
@@ -344,14 +538,16 @@ class OffreStageViewSet(viewsets.ModelViewSet):
 class CandidatureViewSet(viewsets.ModelViewSet):
     #queryset = Candidature.objects.all()
     MAX_CANDIDATURES_GRATUIT = 5
-    queryset = Candidature.objects.select_related('student', 'offre_stage', 'offre_stage__company')
+    queryset = Candidature.objects.select_related(
+        'student', 'offre_stage', 'offre_stage__company', 'reviewed_by', 'affectation'
+    )
 
     serializer_class = CandidatureSerializer
     permission_classes = [IsAuthenticated, IsRelatedObjectOwnerOrStaff]
 
     def get_queryset(self):
         user = self.request.user
-        queryset = self.queryset
+        queryset = self.queryset.order_by('-created_at')
         if user.is_staff:
             return queryset
         if user.role == 'student':
@@ -389,26 +585,125 @@ class CandidatureViewSet(viewsets.ModelViewSet):
             student = Student.objects.get(user=request.user)
         except Student.DoesNotExist:
             raise PermissionDenied("Seuls les étudiants peuvent candidater.")
+        completion = student_profile_completion(request.user, student)
+        if not completion['can_apply']:
+            raise ValidationError({
+                'code': 'incomplete_profile',
+                'detail': "Complétez les informations obligatoires de votre profil avant de postuler.",
+                'missing_fields': completion['missing_fields'],
+                'profile_completion': completion,
+            })
         if Candidature.objects.filter(student=student, offre_stage=offre).exists():
             raise ValidationError("Vous avez déjà candidaté à cette offre.")
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(student=student, status='pending')
+        serializer.save(
+            student=student,
+            status='pending',
+            company_message='',
+            reviewed_at=None,
+            reviewed_by=None,
+        )
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_update(self, serializer):
         user = self.request.user
+        previous_status = serializer.instance.status
         changed_fields = set(serializer.validated_data)
         if user.role == 'student' and changed_fields - {'motivation', 'letter_of_support'}:
             raise PermissionDenied("Un étudiant ne peut modifier que sa motivation et sa lettre.")
-        if user.role == 'company' and changed_fields - {'status'}:
-            raise PermissionDenied("Une entreprise ne peut modifier que le statut de la candidature.")
-        serializer.save(
-            student=serializer.instance.student,
-            offre_stage=serializer.instance.offre_stage,
-        )
+        if user.role == 'company' and changed_fields - {'status', 'company_message'}:
+            raise PermissionDenied("Une entreprise ne peut modifier que la décision et son message.")
+
+        save_kwargs = {
+            'student': serializer.instance.student,
+            'offre_stage': serializer.instance.offre_stage,
+        }
+        if user.is_staff or user.role == 'company':
+            decision_status = serializer.validated_data.get('status', serializer.instance.status)
+            if decision_status in {'accepted', 'rejected'}:
+                message = serializer.validated_data.get(
+                    'company_message', serializer.instance.company_message
+                ).strip()
+                if not message:
+                    raise ValidationError({
+                        'company_message': "Un message est requis pour accepter ou rejeter une candidature."
+                    })
+                save_kwargs.update(
+                    company_message=message,
+                    reviewed_at=timezone.now(),
+                    reviewed_by=user,
+                )
+            elif decision_status == 'pending':
+                save_kwargs.update(
+                    company_message='',
+                    reviewed_at=None,
+                    reviewed_by=None,
+                )
+
+        with transaction.atomic():
+            candidature = serializer.save(**save_kwargs)
+            self._sync_affectation(candidature)
+            if (
+                candidature.status in {'accepted', 'rejected'}
+                and candidature.status != previous_status
+            ):
+                accepted = candidature.status == 'accepted'
+                affectation_id = (
+                    getattr(getattr(candidature, 'affectation', None), 'id', None)
+                    if accepted else None
+                )
+                notify_user(
+                    candidature.student.user,
+                    'application_decision',
+                    'Candidature acceptée' if accepted else 'Candidature non retenue',
+                    (
+                        f"{candidature.offre_stage.company.name} a accepté votre candidature pour « {candidature.offre_stage.title} »."
+                        if accepted else
+                        f"{candidature.offre_stage.company.name} a répondu à votre candidature pour « {candidature.offre_stage.title} »."
+                    ),
+                    {
+                        'application_id': candidature.id,
+                        'offer_id': candidature.offre_stage_id,
+                        'stage_id': affectation_id,
+                        'status': candidature.status,
+                    },
+                    f"application-decision:{candidature.id}:{candidature.status}",
+                )
+
+    @staticmethod
+    def _stage_status_for_dates(start_date, end_date):
+        today = timezone.localdate()
+        if end_date and end_date < today:
+            return 'completed'
+        if start_date and start_date <= today:
+            return 'in_progress'
+        return 'upcoming'
+
+    def _sync_affectation(self, candidature):
+        if candidature.status == 'accepted':
+            offer = candidature.offre_stage
+            stage_status = self._stage_status_for_dates(offer.start_date, offer.end_date)
+            affectation, created = AffectationStage.objects.get_or_create(
+                candidature=candidature,
+                defaults={
+                    'student': candidature.student,
+                    'offre_stage': offer,
+                    'start_date': offer.start_date,
+                    'end_date': offer.end_date,
+                    'status': stage_status,
+                },
+            )
+            if not created and affectation.status == 'cancelled':
+                affectation.status = stage_status
+                affectation.save(update_fields=['status'])
+            return
+
+        AffectationStage.objects.filter(candidature=candidature).exclude(
+            status='completed'
+        ).update(status='cancelled')
     
     @action(detail=False, methods=['get'], url_path='by-student/(?P<student_id>[^/.]+)')
     def by_student(self, request, student_id=None):
@@ -422,9 +717,350 @@ class CandidatureViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 class AffectationStageViewSet(viewsets.ModelViewSet):
-    queryset = AffectationStage.objects.all()
+    queryset = AffectationStage.objects.select_related(
+        'candidature', 'student__user', 'offre_stage__company'
+    ).prefetch_related('weekly_reports').order_by('-assigned_on')
     serializer_class = AffectationStageSerializer
-    permission_classes = [IsStaffPermission]
+    permission_classes = [IsAuthenticated, IsRelatedObjectOwnerOrStaff]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = self.queryset
+        if user.is_staff:
+            return queryset
+        if user.role == 'student':
+            return queryset.filter(student__user=user)
+        company = company_for_user(user)
+        if company:
+            return queryset.filter(offre_stage__company=company)
+        return queryset.none()
+
+    def create(self, request, *args, **kwargs):
+        raise PermissionDenied(
+            "Une affectation est créée automatiquement après l'acceptation d'une candidature."
+        )
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        if user.role == 'student' and not user.is_staff:
+            raise PermissionDenied("Un étudiant ne peut pas modifier son parcours de stage.")
+
+        allowed_company_fields = {
+            'start_date', 'end_date', 'status', 'objectives',
+            'convention_pdf', 'supervisor_name', 'supervisor_email',
+        }
+        if not user.is_staff and set(serializer.validated_data) - allowed_company_fields:
+            raise PermissionDenied("Ces informations ne peuvent pas être modifiées par l'entreprise.")
+        certified_fields = {'start_date', 'end_date', 'status', 'supervisor_name'}
+        if (
+            set(serializer.validated_data) & certified_fields
+            and serializer.instance.certificates.filter(revoked_at__isnull=True).exists()
+        ):
+            raise ValidationError(
+                "Une attestation valide protège ces informations. Révoquez-la avant toute correction."
+            )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not self.request.user.is_staff:
+            raise PermissionDenied("Seul un administrateur peut supprimer un parcours de stage.")
+        instance.delete()
+
+    @action(detail=True, methods=['get'], url_path='attestation')
+    def attestation(self, request, pk=None):
+        affectation = self.get_object()
+        if affectation.status != 'completed':
+            raise ValidationError("Le stage doit être terminé avant la génération de l'attestation.")
+        if not affectation.start_date or not affectation.end_date:
+            raise ValidationError("Les dates du stage doivent être renseignées.")
+        try:
+            evaluation = affectation.candidature.evaluation
+        except (AttributeError, ObjectDoesNotExist):
+            raise ValidationError("L'évaluation finale doit être publiée avant l'attestation.")
+
+        try:
+            current_hash = certificate_data_hash(affectation, evaluation)
+            certificate = StageCertificate.objects.filter(
+                affectation=affectation,
+                revoked_at__isnull=True,
+            ).first()
+            if certificate:
+                if certificate.data_hash and certificate.data_hash != current_hash:
+                    raise ValidationError(
+                        "Les données ne correspondent plus à l'attestation active. Révoquez-la avant une nouvelle émission."
+                    )
+                if not certificate.data_hash:
+                    certificate.data_hash = current_hash
+                    certificate.save(update_fields=['data_hash'])
+            else:
+                last_version = StageCertificate.objects.filter(
+                    affectation=affectation,
+                ).aggregate(max_version=Max('version'))['max_version'] or 0
+                certificate = StageCertificate.objects.create(
+                    affectation=affectation,
+                    version=last_version + 1,
+                    data_hash=current_hash,
+                )
+            public_site_url = getattr(
+                settings,
+                'PUBLIC_SITE_URL',
+                'https://totinda.com',
+            ).rstrip('/')
+            verification_url = (
+                f"{public_site_url}/verifier-attestation"
+                f"?reference={certificate.reference}"
+            )
+            pdf, reference = build_stage_certificate(
+                affectation,
+                evaluation,
+                certificate.reference,
+                verification_url,
+            )
+        except ValidationError:
+            raise
+        except Exception:
+            logger.exception(
+                "Échec de génération de l'attestation pour l'affectation %s",
+                affectation.pk,
+            )
+            raise APIException(
+                "La génération PDF a échoué. Consultez les logs du serveur."
+            )
+        student_name = affectation.student.user.username.replace(' ', '-').lower()
+        return Response({
+            'filename': f'attestation-stage-{student_name}.pdf',
+            'reference': reference,
+            'version': certificate.version,
+            'issued_at': certificate.issued_at,
+            'verification_count': certificate.verification_count,
+            'content_base64': base64.b64encode(pdf).decode('ascii'),
+        })
+
+
+class StageCertificateViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action == 'verify':
+            return [AllowAny()]
+        return super().get_permissions()
+
+    @action(detail=False, methods=['get'], url_path='verify')
+    def verify(self, request):
+        reference = request.query_params.get('reference', '').strip().upper()
+        if not reference:
+            raise ValidationError({'reference': "Saisissez une référence d'attestation."})
+        certificate = StageCertificate.objects.select_related(
+            'affectation__student__user',
+            'affectation__offre_stage__company',
+        ).filter(reference=reference).first()
+        if not certificate:
+            return Response({'valid': False, 'reference': reference})
+
+        now = timezone.now()
+        StageCertificate.objects.filter(pk=certificate.pk).update(
+            verification_count=F('verification_count') + 1,
+            last_verified_at=now,
+        )
+        certificate.verification_count += 1
+        certificate.last_verified_at = now
+        affectation = certificate.affectation
+        user = affectation.student.user
+        student_name = ' '.join(filter(None, [user.prenom, user.postnom, user.username]))
+        return Response({
+            'valid': certificate.is_valid,
+            'reference': certificate.reference,
+            'version': certificate.version,
+            'student_name': student_name,
+            'company_name': affectation.offre_stage.company.name,
+            'internship_title': affectation.offre_stage.title,
+            'start_date': affectation.start_date,
+            'end_date': affectation.end_date,
+            'issued_at': certificate.issued_at,
+            'revoked_at': certificate.revoked_at,
+        })
+
+    @action(detail=False, methods=['get'], url_path='history')
+    def history(self, request):
+        stage_id = request.query_params.get('stage_id')
+        if not stage_id:
+            raise ValidationError({'stage_id': "Parcours de stage requis."})
+        certificates = StageCertificate.objects.select_related(
+            'affectation__student__user',
+            'affectation__offre_stage__company',
+        ).filter(affectation_id=stage_id)
+        first = certificates.first()
+        if first:
+            affectation = first.affectation
+            company = company_for_user(request.user)
+            is_student = affectation.student.user_id == request.user.id
+            is_company = company and affectation.offre_stage.company_id == company.id
+            if not request.user.is_staff and not is_student and not is_company:
+                raise PermissionDenied("Ce parcours ne vous appartient pas.")
+        return Response([{
+            'reference': item.reference,
+            'version': item.version,
+            'issued_at': item.issued_at,
+            'valid': item.is_valid,
+            'revoked_at': item.revoked_at,
+            'revocation_reason': item.revocation_reason,
+            'verification_count': item.verification_count,
+            'last_verified_at': item.last_verified_at,
+        } for item in certificates])
+
+    @action(detail=True, methods=['post'], url_path='revoke')
+    def revoke(self, request, pk=None):
+        certificate = StageCertificate.objects.select_related(
+            'affectation__offre_stage__company',
+        ).filter(reference=pk).first()
+        if not certificate:
+            raise ValidationError("Attestation introuvable.")
+        company = company_for_user(request.user)
+        if not request.user.is_staff and (
+            not company or certificate.affectation.offre_stage.company_id != company.id
+        ):
+            raise PermissionDenied("Seule l'entreprise émettrice peut révoquer cette attestation.")
+        if not certificate.is_valid:
+            raise ValidationError("Cette attestation est déjà révoquée.")
+        reason = request.data.get('reason', '').strip()
+        if len(reason) < 10:
+            raise ValidationError({'reason': "Indiquez un motif précis d'au moins 10 caractères."})
+        certificate.revoked_at = timezone.now()
+        certificate.revoked_by = request.user
+        certificate.revocation_reason = reason
+        certificate.save(update_fields=['revoked_at', 'revoked_by', 'revocation_reason'])
+        return Response({
+            'reference': certificate.reference,
+            'valid': False,
+            'revoked_at': certificate.revoked_at,
+            'revocation_reason': certificate.revocation_reason,
+        })
+
+
+class StageWeeklyReportViewSet(viewsets.ModelViewSet):
+    queryset = StageWeeklyReport.objects.select_related(
+        'affectation__student__user',
+        'affectation__offre_stage__company',
+        'validated_by',
+    )
+    serializer_class = StageWeeklyReportSerializer
+    permission_classes = [IsAuthenticated, IsRelatedObjectOwnerOrStaff]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = self.queryset
+        affectation_id = self.request.query_params.get('affectation')
+        if affectation_id:
+            queryset = queryset.filter(affectation_id=affectation_id)
+        if user.is_staff:
+            return queryset
+        if user.role == 'student':
+            return queryset.filter(affectation__student__user=user)
+        company = company_for_user(user)
+        if company:
+            return queryset.filter(affectation__offre_stage__company=company).exclude(status='draft')
+        return queryset.none()
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.is_staff:
+            serializer.save()
+            return
+        if user.role != 'student':
+            raise PermissionDenied("Seul l'étudiant peut créer un rapport hebdomadaire.")
+        affectation = serializer.validated_data['affectation']
+        if affectation.student.user_id != user.id:
+            raise PermissionDenied("Ce parcours de stage ne vous appartient pas.")
+        if affectation.status == 'cancelled':
+            raise ValidationError("Impossible d'ajouter un rapport à un stage interrompu.")
+        report_status = serializer.validated_data.get('status', 'draft')
+        if report_status not in {'draft', 'submitted'}:
+            raise ValidationError({'status': "Un étudiant ne peut pas valider son rapport."})
+        report = serializer.save(
+            submitted_at=timezone.now() if report_status == 'submitted' else None,
+        )
+        if report_status == 'submitted':
+            student_name = report.affectation.student.user.username
+            notify_company(
+                report.affectation.offre_stage.company,
+                'report_submitted',
+                'Nouveau rapport hebdomadaire',
+                f"{student_name} a soumis son rapport pour la semaine du {report.week_start}.",
+                {'stage_id': report.affectation_id, 'report_id': report.id},
+                f"report-submitted:{report.id}",
+            )
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        report = serializer.instance
+        company = company_for_user(user)
+        # Un utilisateur d'entreprise peut aussi être marqué staff pour accéder
+        # à l'administration. Il doit néanmoins suivre le workflow entreprise
+        # afin d'enregistrer le validateur et de notifier l'étudiant.
+        if user.is_staff and not company:
+            serializer.save()
+            return
+
+        fields = set(serializer.validated_data)
+        if user.role == 'student':
+            if report.status == 'validated':
+                raise PermissionDenied("Un rapport validé ne peut plus être modifié.")
+            allowed = {'activities', 'learnings', 'difficulties', 'status'}
+            if fields - allowed:
+                raise PermissionDenied("Ces informations ne peuvent pas être modifiées par l'étudiant.")
+            report_status = serializer.validated_data.get('status', report.status)
+            if report_status not in {'draft', 'submitted'}:
+                raise ValidationError({'status': "Un étudiant ne peut pas valider son rapport."})
+            previous_status = report.status
+            updated_report = serializer.save(
+                submitted_at=timezone.now() if report_status == 'submitted' else None,
+                validated_at=None,
+                validated_by=None,
+            )
+            if previous_status != 'submitted' and report_status == 'submitted':
+                notify_company(
+                    updated_report.affectation.offre_stage.company,
+                    'report_submitted',
+                    'Nouveau rapport hebdomadaire',
+                    f"{updated_report.affectation.student.user.username} a soumis son rapport pour la semaine du {updated_report.week_start}.",
+                    {'stage_id': updated_report.affectation_id, 'report_id': updated_report.id},
+                    f"report-submitted:{updated_report.id}",
+                )
+            return
+
+        if not company or report.affectation.offre_stage.company_id != company.id:
+            raise PermissionDenied("Ce rapport ne concerne pas votre entreprise.")
+        if fields - {'company_comment', 'status'}:
+            raise PermissionDenied("L'entreprise ne peut modifier que son commentaire et la validation.")
+        report_status = serializer.validated_data.get('status', report.status)
+        if report.status == 'draft' or report_status != 'validated':
+            raise ValidationError({'status': "Seul un rapport soumis peut être validé."})
+        company_comment = serializer.validated_data.get(
+            'company_comment', report.company_comment
+        ).strip()
+        if not company_comment:
+            raise ValidationError({
+                'company_comment': "Un commentaire est requis pour valider le rapport."
+            })
+        updated_report = serializer.save(
+            status='validated',
+            company_comment=company_comment,
+            validated_at=timezone.now(),
+            validated_by=user,
+        )
+        notify_user(
+            updated_report.affectation.student.user,
+            'report_validated',
+            'Rapport hebdomadaire validé',
+            f"L’entreprise a validé votre rapport de la semaine du {updated_report.week_start} et a laissé un commentaire.",
+            {'stage_id': updated_report.affectation_id, 'report_id': updated_report.id},
+            f"report-validated:{updated_report.id}",
+        )
+
+    def perform_destroy(self, instance):
+        if not self.request.user.is_staff:
+            raise PermissionDenied("Seul un administrateur peut supprimer un rapport hebdomadaire.")
+        instance.delete()
 
 class EvaluationViewSet(viewsets.ModelViewSet):
     queryset = Evaluation.objects.all()
@@ -445,16 +1081,39 @@ class EvaluationViewSet(viewsets.ModelViewSet):
         if company_for_user(self.request.user) != candidature.offre_stage.company:
             raise PermissionDenied("Seule l'entreprise concernée peut gérer cette évaluation.")
 
+    def create(self, request, *args, **kwargs):
+        if not request.user.is_staff and not company_for_user(request.user):
+            raise PermissionDenied("Seule une entreprise peut créer une évaluation finale.")
+        return super().create(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         candidature = serializer.validated_data.get('candidature')
-        if not candidature:
-            raise ValidationError("Candidature requise.")
         self._ensure_company_owns_candidature(candidature)
-        serializer.save()
+        evaluation = serializer.save()
+        notify_user(
+            candidature.student.user,
+            'evaluation_published',
+            'Évaluation finale publiée',
+            f"{candidature.offre_stage.company.name} a publié l’évaluation finale de votre stage.",
+            {'stage_id': candidature.affectation.id, 'evaluation_id': evaluation.id},
+            f"evaluation-published:{evaluation.id}",
+        )
 
     def perform_update(self, serializer):
         self._ensure_company_owns_candidature(serializer.instance.candidature)
-        serializer.save(candidature=serializer.instance.candidature)
+        candidature = serializer.instance.candidature
+        if candidature.affectation.certificates.filter(revoked_at__isnull=True).exists():
+            raise ValidationError(
+                "Cette évaluation est protégée par une attestation valide. Révoquez l'attestation avant de la modifier."
+            )
+        evaluation = serializer.save(candidature=candidature)
+        notify_user(
+            candidature.student.user,
+            'evaluation_published',
+            'Évaluation finale mise à jour',
+            f"{candidature.offre_stage.company.name} a mis à jour l’évaluation finale de votre stage.",
+            {'stage_id': candidature.affectation.id, 'evaluation_id': evaluation.id},
+        )
 
     def perform_destroy(self, instance):
         self._ensure_company_owns_candidature(instance.candidature)
@@ -464,6 +1123,48 @@ class EvaluationViewSet(viewsets.ModelViewSet):
         evaluations = self.get_queryset().filter(candidature_id=candidature_id)
         serializer = self.get_serializer(evaluations, many=True)
         return Response(serializer.data)
+
+
+class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Notification.objects.filter(recipient=self.request.user)
+
+    @action(detail=False, methods=['get'], url_path='unread-count')
+    def unread_count(self, request):
+        return Response({'count': self.get_queryset().filter(read_at__isnull=True).count()})
+
+    @action(detail=True, methods=['post'], url_path='mark-read')
+    def mark_read(self, request, pk=None):
+        notification = self.get_object()
+        if not notification.read_at:
+            notification.read_at = timezone.now()
+            notification.save(update_fields=['read_at'])
+        return Response(self.get_serializer(notification).data)
+
+    @action(detail=False, methods=['post'], url_path='mark-all-read')
+    def mark_all_read(self, request):
+        updated = self.get_queryset().filter(read_at__isnull=True).update(read_at=timezone.now())
+        return Response({'updated': updated})
+
+
+class PushDeviceViewSet(viewsets.ModelViewSet):
+    serializer_class = PushDeviceSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ['get', 'post', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        return PushDevice.objects.filter(user=self.request.user)
+
+    @action(detail=False, methods=['post'], url_path='deactivate')
+    def deactivate(self, request):
+        token = str(request.data.get('expo_push_token', '')).strip()
+        if not token:
+            raise ValidationError({'expo_push_token': "Ce champ est requis."})
+        updated = self.get_queryset().filter(expo_push_token=token).update(is_active=False)
+        return Response({'updated': updated})
 
 class FormationViewSet(viewsets.ModelViewSet):
     queryset = Formation.objects.all()

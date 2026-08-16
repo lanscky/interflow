@@ -38,6 +38,12 @@ class IsRelatedObjectOwnerOrStaff(permissions.BasePermission):
         if user.is_staff or user.is_superuser:
             return True
 
+        # Un utilisateur doit pouvoir lire et modifier sa propre ressource User.
+        # Les autres objets métiers exposent leur propriétaire via l'attribut
+        # ``user``, mais ce n'est naturellement pas le cas du modèle User lui-même.
+        if obj == user:
+            return True
+
         owner = getattr(obj, "user", None)
         if owner == user:
             return True
@@ -47,6 +53,10 @@ class IsRelatedObjectOwnerOrStaff(permissions.BasePermission):
             return True
         candidature = getattr(obj, "candidature", None)
         if candidature is not None and candidature.student.user_id == user.id:
+            return True
+
+        affectation = getattr(obj, "affectation", None)
+        if affectation is not None and affectation.student.user_id == user.id:
             return True
 
         user_company = company_for_user(user)
@@ -59,5 +69,7 @@ class IsRelatedObjectOwnerOrStaff(permissions.BasePermission):
             company = obj.offre_stage.company
         if company is None and hasattr(obj, "candidature") and obj.candidature:
             company = obj.candidature.offre_stage.company
+        if company is None and affectation is not None:
+            company = affectation.offre_stage.company
 
         return company is not None and user_company == company
