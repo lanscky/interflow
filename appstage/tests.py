@@ -21,6 +21,7 @@ from .models import (
     OffreStage,
     Payment,
     PushDevice,
+    School,
     SocialIdentity,
     StageWeeklyReport,
     Student,
@@ -127,6 +128,7 @@ class ApiSecurityTests(APITestCase):
                 "telephone": "+243000000000",
                 "filiere": "Informatique",
                 "niveau": "Licence LMD (Bac +3)",
+                "custom_school_name": "Université Test de Kinshasa",
             },
             format="json",
         )
@@ -158,6 +160,26 @@ class ApiSecurityTests(APITestCase):
             end_date=date.today() + timedelta(days=90),
         )
 
+    def test_platform_stats_are_public_and_derived_from_database(self):
+        student_user = self.create_user("stats-student@example.com", "student")
+        student = Student.objects.create(user=student_user, filiere="Informatique", niveau="L3")
+        company = Company.objects.create(name="Stats Corp", secteur="Tech", description="Test")
+        offer = self.create_offer(company)
+        Candidature.objects.create(
+            student=student,
+            offre_stage=offer,
+            motivation="Motivé",
+            status="accepted",
+        )
+
+        response = self.client.get("/api/public/stats/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(response.data["companies"], 1)
+        self.assertGreaterEqual(response.data["students"], 1)
+        self.assertGreaterEqual(response.data["active_offers"], 1)
+        self.assertGreaterEqual(response.data["placements"], 1)
+
     @patch("appstage.serializers.send_activation_email.delay")
     def test_student_registration_cannot_set_admin_flags(self, _send_email):
         payload = {
@@ -170,6 +192,7 @@ class ApiSecurityTests(APITestCase):
                 "is_superuser": True,
             },
             "school": None,
+            "custom_school_name": "Institut Supérieur Test",
             "filiere": "Informatique",
             "niveau": "L3",
         }
@@ -180,6 +203,38 @@ class ApiSecurityTests(APITestCase):
             self.assertFalse(user.is_staff)
             self.assertFalse(user.is_superuser)
             self.assertEqual(user.role, "student")
+
+    def test_school_catalogue_is_public_searchable_and_paginated(self):
+        School.objects.create(name="Université Totinda", sigle="UNITO", province="Kinshasa")
+        School.objects.create(name="Institut Hors Recherche", sigle="IHR", province="Kongo Central")
+
+        response = self.client.get("/api/schools/?search=UNITO&limit=20")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["name"], "Université Totinda")
+
+    @patch("appstage.serializers.send_activation_email.delay")
+    def test_student_registration_requires_selected_or_manual_school(self, _send_email):
+        payload = {
+            "user": {
+                "username": "student",
+                "email": "student-school@example.com",
+                "password": "StrongPassword123!",
+                "prenom": "Amina",
+                "postnom": "Kalala",
+                "telephone": "+243000000000",
+            },
+            "school": None,
+            "custom_school_name": "",
+            "filiere": "Informatique",
+            "niveau": "L3",
+        }
+
+        response = self.client.post("/api/students/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("school", response.data)
 
     @patch("appstage.serializers.send_activation_email.delay")
     def test_company_registration_cannot_set_admin_flags(self, _send_email):
@@ -314,6 +369,48 @@ class ApiSecurityTests(APITestCase):
         self.assertEqual(response.data[0]["nom_entreprise"], "Brand Corp")
         self.assertIn("company_logos/brand.png", response.data[0]["logo_entreprise"])
 
+    def test_student_offer_catalogue_excludes_expired_offers_and_exposes_days_remaining(self):
+        student_user = self.create_user("catalogue@example.com", "student")
+        Student.objects.create(user=student_user, filiere="Info", niveau="L3")
+        company = Company.objects.create(name="Catalogue Corp", secteur="Tech", description="Test")
+        active_offer = self.create_offer(company, title="Offre encore disponible")
+        expired_offer = self.create_offer(company, title="Offre expirée")
+        expired_offer.end_date = date.today() - timedelta(days=1)
+        expired_offer.save(update_fields=["end_date"])
+        self.client.force_authenticate(student_user)
+
+        response = self.client.get("/api/offres-stage/offresactives/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        offer_ids = [offer["id"] for offer in response.data]
+        self.assertIn(active_offer.id, offer_ids)
+        self.assertNotIn(expired_offer.id, offer_ids)
+        serialized_active = next(offer for offer in response.data if offer["id"] == active_offer.id)
+        self.assertEqual(serialized_active["days_remaining"], 90)
+
+    def test_student_cannot_apply_to_expired_offer(self):
+        student_user = self.create_user("expired-application@example.com", "student")
+        Student.objects.create(
+            user=student_user,
+            filiere="Informatique",
+            niveau="L3",
+            custom_school_name="Université Totinda",
+        )
+        company = Company.objects.create(name="Expired Corp", secteur="Tech", description="Test")
+        expired_offer = self.create_offer(company, title="Offre expirée")
+        expired_offer.end_date = date.today() - timedelta(days=1)
+        expired_offer.save(update_fields=["end_date"])
+        self.client.force_authenticate(student_user)
+
+        response = self.client.post(
+            "/api/candidatures/",
+            {"offre_stage": expired_offer.id, "motivation": "Motivé"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["code"], "offer_expired")
+
     def test_company_user_can_upload_company_logo(self):
         company = Company.objects.create(name="Logo Corp", secteur="Tech", description="Test")
         company_user = self.create_user("logo-company@example.com", "company")
@@ -340,7 +437,12 @@ class ApiSecurityTests(APITestCase):
     def test_application_is_bound_to_authenticated_student(self):
         student_user = self.create_user("student@example.com", "student")
         other_user = self.create_user("other@example.com", "student")
-        student = Student.objects.create(user=student_user, filiere="Info", niveau="L3")
+        student = Student.objects.create(
+            user=student_user,
+            filiere="Info",
+            niveau="L3",
+            custom_school_name="Université Test",
+        )
         other = Student.objects.create(user=other_user, filiere="Info", niveau="L3")
         company = Company.objects.create(name="Company", secteur="Tech", description="Test")
         offer = self.create_offer(company)
@@ -351,7 +453,74 @@ class ApiSecurityTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIsNone(response.data["letter_of_support"])
         self.assertEqual(Candidature.objects.get().student, student)
+
+    def test_optional_recommendation_letter_is_visible_to_the_company(self):
+        student_user = self.create_user("letter-student@example.com", "student")
+        Student.objects.create(
+            user=student_user,
+            filiere="Informatique",
+            niveau="L3",
+            custom_school_name="Université Test",
+        )
+        company = Company.objects.create(name="Letter Corp", secteur="Tech", description="Test")
+        company_user = self.create_user("letter-company@example.com", "company")
+        CompanyUser.objects.create(user=company_user, company=company, is_active=True)
+        offer = self.create_offer(company)
+        letter = SimpleUploadedFile(
+            "recommandation.pdf",
+            b"%PDF-1.4\nTotinda recommendation letter\n%%EOF",
+            content_type="application/pdf",
+        )
+
+        with tempfile.TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
+            self.client.force_authenticate(student_user)
+            created = self.client.post(
+                "/api/candidatures/",
+                {
+                    "offre_stage": offer.pk,
+                    "motivation": "Motivé",
+                    "letter_of_support": letter,
+                },
+                format="multipart",
+            )
+            self.client.force_authenticate(company_user)
+            company_view = self.client.get(f"/api/candidatures/by-company/{company.pk}/")
+
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        self.assertIn("letters_of_support/", created.data["letter_of_support"])
+        self.assertEqual(company_view.status_code, status.HTTP_200_OK)
+        self.assertIn("letters_of_support/", company_view.data[0]["letter_of_support"])
+
+    def test_recommendation_letter_must_be_a_pdf(self):
+        student_user = self.create_user("invalid-letter@example.com", "student")
+        Student.objects.create(
+            user=student_user,
+            filiere="Informatique",
+            niveau="L3",
+            custom_school_name="Université Test",
+        )
+        company = Company.objects.create(name="Invalid Letter Corp", secteur="Tech", description="Test")
+        offer = self.create_offer(company)
+        self.client.force_authenticate(student_user)
+
+        response = self.client.post(
+            "/api/candidatures/",
+            {
+                "offre_stage": offer.pk,
+                "motivation": "Motivé",
+                "letter_of_support": SimpleUploadedFile(
+                    "recommandation.pdf",
+                    b"not a pdf",
+                    content_type="application/pdf",
+                ),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("letter_of_support", response.data)
 
     def test_student_sees_company_decision_with_offer_details(self):
         student_user = self.create_user("decision@example.com", "student")

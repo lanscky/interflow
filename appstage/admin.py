@@ -1,8 +1,33 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin 
 from django.contrib.auth.forms import UserCreationForm
+from django import forms
+from .models import Partner
 from .models import User, Student, SocialIdentity, School, SchoolUser, Company,CompanyUser, OffreStage, Candidature, AffectationStage, StageWeeklyReport, StageCertificate, Notification, PushDevice, Evaluation, Competence, Formation, CompanySubscription, SubscriptionPlan, Payment, Config
 # Register your models here.
+
+
+class PartnerAdminForm(forms.ModelForm):
+    class Meta:
+        model = Partner
+        fields = '__all__'
+
+    def clean_image(self):
+        image = self.cleaned_data.get('image')
+        if image and image.size > 5 * 1024 * 1024:
+            raise forms.ValidationError("Le logo ne doit pas dépasser 5 Mo.")
+        return image
+
+
+@admin.register(Partner)
+class PartnerAdmin(admin.ModelAdmin):
+    form = PartnerAdminForm
+    list_display = ('name', 'position', 'is_active')
+    list_editable = ('position', 'is_active')
+    list_filter = ('is_active',)
+    search_fields = ('name',)
+    ordering = ('position', 'id')
+
 
 class CustomUserAdmin(UserAdmin):
     add_form = UserCreationForm
@@ -31,6 +56,12 @@ class CandidatureAdmin(admin.ModelAdmin):
     search_fields = ('student__user__username', 'offre_stage__title')
     list_filter = ('status', 'created_at')
     ordering = ('-created_at',)
+
+class SchoolAdmin(admin.ModelAdmin):
+    list_display = ('name', 'sigle', 'category', 'ownership', 'territory', 'province', 'approval_status', 'is_active')
+    search_fields = ('name', 'sigle', 'territory', 'province', 'registry_id')
+    list_filter = ('category', 'ownership', 'province', 'approval_status', 'is_active')
+    ordering = ('name', 'province', 'territory')
 
 class AffectationStageAdmin(admin.ModelAdmin):
     list_display = ('id', 'student', 'offre_stage', 'status', 'start_date', 'end_date', 'assigned_on')
@@ -64,7 +95,7 @@ class PaymentAdmin(admin.ModelAdmin):
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(Student, admin.ModelAdmin)  # Assuming StudentAdmin is not defined, using default ModelAdmin
 admin.site.register(SocialIdentity, admin.ModelAdmin)
-admin.site.register(School, admin.ModelAdmin)  # Assuming SchoolAdmin is not defined, using default ModelAdmin
+admin.site.register(School, SchoolAdmin)
 admin.site.register(SchoolUser, admin.ModelAdmin)  # Assuming SchoolUserAdmin is not defined, using default ModelAdmin
 admin.site.register(Company, CompanyAdmin)  # Assuming CompanyAdmin is not defined, using default ModelAdmin
 admin.site.register(CompanyUser, admin.ModelAdmin)  # Assuming CompanyUserAdmin is not defined, using default ModelAdmin

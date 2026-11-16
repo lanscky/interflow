@@ -5,6 +5,9 @@ PROFILE_FIELDS = (
     ('telephone', lambda user, student: user.telephone),
     ('filiere', lambda user, student: student.filiere if student else None),
     ('niveau', lambda user, student: student.niveau if student else None),
+    ('school', lambda user, student: (
+        student.school_id or student.custom_school_name if student else None
+    )),
     ('cv', lambda user, student: student.cv if student else None),
     ('profile_picture', lambda user, student: user.profile_picture),
 )
@@ -16,6 +19,7 @@ APPLICATION_REQUIRED_FIELDS = (
     'telephone',
     'filiere',
     'niveau',
+    'school',
 )
 
 
@@ -50,4 +54,3 @@ def student_profile_completion(user, student=None):
         'total_fields': len(all_fields),
     }
 from .models import Student
-

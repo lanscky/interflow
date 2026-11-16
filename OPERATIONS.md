@@ -39,3 +39,27 @@ docker compose exec -T db mysql -u root -p totinda < /chemin/prive/totinda.sql
 ```
 
 Tester régulièrement la restauration sur une base isolée avant de considérer une sauvegarde comme valide.
+
+## Partenaires de l’écosystème (page d’accueil)
+
+La migration `appstage/0028_partner` crée le catalogue des logos de la section
+« Notre écosystème — Ils avancent avec Totinda ». L’appliquer via la procédure
+de migration habituelle lors d’une livraison autorisée, avant d’utiliser cette
+rubrique dans l’admin. Aucune donnée partenaire n’est préchargée.
+
+Dans Django admin, ouvrir **Partenaires de l’écosystème** puis **Ajouter** :
+nom du partenaire (également texte alternatif), logo image obligatoire (5 Mo
+maximum), ordre d’affichage (les plus petits en premier), et case **Afficher
+sur le site**. Les permissions Django d’ajout, modification, consultation et
+suppression s’appliquent. Décocher la case masque un logo sans supprimer sa fiche;
+supprimer une fiche la retire de la liste publique. Comme pour les ImageField
+Django standards, cette suppression ne purge pas physiquement l’ancien fichier
+du stockage; sa rétention/purge relève de l’exploitation.
+
+L’API publique `GET /api/partners/` expose uniquement `id`, `name`, `image` des
+partenaires actifs, triés par ordre puis identifiant, sans pagination; elle ne
+permet aucune écriture. Le frontend actualise la liste au chargement, au retour
+sur l’onglet et toutes les 60 secondes tant que la page reste visible. Si aucun
+partenaire actif n’est disponible ou si la lecture échoue, la section est masquée.
+Les anciens logos fixes doivent être ajoutés dans l’admin si leur affichage est
+souhaité. Le stockage média configuré doit servir les images aux visiteurs.

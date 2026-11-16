@@ -5,7 +5,7 @@ from .views import (
     CompanyViewSet, CompanyUserViewSet, OffreStageViewSet,
     CandidatureViewSet, AffectationStageViewSet, StageWeeklyReportViewSet, StageCertificateViewSet, NotificationViewSet, PushDeviceViewSet, EvaluationViewSet,
     FormationViewSet, CompetenceViewSet,SubscriptionViewSet,CompanySubscriptionViewSet,PaymentViewSet,ConfigViewSet,
-    GoogleLoginView,
+    GoogleLoginView, PlatformStatsView, PartnerViewSet,
 )
 
 router = DefaultRouter()
@@ -29,8 +29,10 @@ router.register(r'subscription', SubscriptionViewSet, basename='subscription')
 router.register(r'company-subscriptions', CompanySubscriptionViewSet, basename='company-subscription')
 router.register(r'payments', PaymentViewSet, basename='payment')
 router.register(r'config', ConfigViewSet, basename='config')
+router.register(r'partners', PartnerViewSet, basename='partner')
 
 urlpatterns = [
     path('auth/google/', GoogleLoginView.as_view(), name='google-login'),
+    path('public/stats/', PlatformStatsView.as_view(), name='platform-stats'),
     path('', include(router.urls)),
 ]

@@ -1,6 +1,8 @@
 # views.py
-from rest_framework import viewsets, authentication,status
+from rest_framework import viewsets, authentication, status, filters
 from rest_framework.permissions import AllowAny, IsAuthenticated, SAFE_METHODS
+from .models import Partner
+from .serializers import PartnerSerializer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import (
     User, Student, SocialIdentity, School, SchoolUser,
@@ -15,7 +17,7 @@ from .serializers import (
     GoogleAuthSerializer, serialize_user_for_session, FormationSerializer, CompetenceSerializer,
     CompanySubscriptionSerializer, PaymentSerializer, SubscriptionPlanSerializer, ConfigSerializer
 )
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.pagination import PageNumberPagination, LimitOffsetPagination
 # Surcharge de la methode d'authentification JWT pour inclure des informations utilisateur
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -62,6 +64,23 @@ class CustomTokenObtainPairView(TokenObtainPairView):
 class GoogleConfigurationError(APIException):
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     default_detail = "La connexion Google n'est pas configurée sur le serveur."
+
+
+class PlatformStatsView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        today = timezone.localdate()
+        return Response({
+            "companies": Company.objects.count(),
+            "students": Student.objects.count(),
+            "active_offers": OffreStage.objects.filter(
+                is_active=True,
+                end_date__gte=today,
+            ).count(),
+            "placements": Candidature.objects.filter(status="accepted").count(),
+        })
 
 
 class GoogleLoginView(APIView):
@@ -243,7 +262,9 @@ class UserViewSet(viewsets.ModelViewSet):
             student, _created = Student.objects.select_for_update().get_or_create(user=user)
             student.filiere = data['filiere']
             student.niveau = data['niveau']
-            student.save(update_fields=['filiere', 'niveau'])
+            student.school = data.get('school')
+            student.custom_school_name = data.get('custom_school_name', '')
+            student.save(update_fields=['filiere', 'niveau', 'school', 'custom_school_name'])
 
         return Response(serialize_user_for_session(user, request))
 
@@ -406,11 +427,30 @@ class StudentViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Vous ne pouvez supprimer que votre profil étudiant.")
         instance.delete()
 
+class SchoolPagination(LimitOffsetPagination):
+    default_limit = 20
+    max_limit = 50
+
+
 class SchoolViewSet(viewsets.ModelViewSet):
-    queryset = School.objects.all()
+    queryset = School.objects.all().order_by('name', 'province', 'territory')
     serializer_class = SchoolSerializer
-    #authentication_classes = [JWTAuthentication]
-    permission_classes = [IsStaffPermission]
+    pagination_class = SchoolPagination
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'sigle', 'province', 'territory']
+    ordering_fields = ['name', 'province', 'territory']
+    ordering = ['name', 'province', 'territory']
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [AllowAny()]
+        return [IsStaffPermission()]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.request.user.is_authenticated and self.request.user.is_staff:
+            return queryset
+        return queryset.filter(is_active=True)
 
 class SchoolUserViewSet(viewsets.ModelViewSet):
     queryset = SchoolUser.objects.all()
@@ -495,11 +535,14 @@ class OffreStageViewSet(viewsets.ModelViewSet):
         if not student:
             return Response({"error": "Profil étudiant introuvable."}, status=status.HTTP_404_NOT_FOUND)
 
-        offres = OffreStage.objects.filter(is_active=True).annotate(
+        offres = OffreStage.objects.filter(
+            is_active=True,
+            end_date__gte=timezone.localdate(),
+        ).annotate(
             nombre_candidats=Count("candidature")
         ).select_related(
             "company__companysubscription__plan"
-        )
+        ).order_by('-published_at')
         serializer = self.get_serializer(offres, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
@@ -568,6 +611,12 @@ class CandidatureViewSet(viewsets.ModelViewSet):
             ).get(id=offre_id)
         except OffreStage.DoesNotExist:
             raise PermissionDenied("Offre introuvable.")
+
+        if not offre.is_active or offre.end_date < timezone.localdate():
+            raise ValidationError({
+                'code': 'offer_expired',
+                'detail': "Cette offre a expiré et n'accepte plus de candidatures.",
+            })
 
         subscription = getattr(offre.company, "companysubscription", None)
         plan = subscription.plan if subscription else None
@@ -1595,6 +1644,14 @@ class PaymentViewSet(viewsets.ReadOnlyModelViewSet):
         payments = self.get_queryset().filter(company=company_user.company)
         serializer = self.get_serializer(payments, many=True)
         return Response(serializer.data)
+
+
+class PartnerViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Partner.objects.filter(is_active=True).order_by('position', 'id')
+    serializer_class = PartnerSerializer
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    pagination_class = None
 
 
 class ConfigViewSet(viewsets.ReadOnlyModelViewSet):

@@ -61,6 +61,7 @@ class SocialIdentity(models.Model):
 class Student(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     school = models.ForeignKey('School', on_delete=models.SET_NULL, null=True)
+    custom_school_name = models.CharField(max_length=200, blank=True, default='')
     filiere = models.CharField(max_length=100, blank=True, default='') # ex: Informatique, Mathématiques, etc.
     niveau = models.CharField(max_length=100, blank=True, default='')  # ex: Licence 3, Master 1, etc.
     cv = models.FileField(upload_to='cvs/', null=True, blank=True)
@@ -93,9 +94,27 @@ class Formation(models.Model):
 
 # 3. École
 class School(models.Model):
-    name = models.CharField(max_length=150)
-    address = models.TextField()
-    contact_email = models.EmailField()
+    name = models.CharField(max_length=255)
+    sigle = models.CharField(max_length=80, blank=True, default='')
+    logo = models.ImageField(upload_to='schools/logos/', null=True, blank=True)
+    category = models.CharField(max_length=100, blank=True, default='')
+    ownership = models.CharField(max_length=20, blank=True, default='')
+    territory = models.CharField(max_length=100, blank=True, default='')
+    province = models.CharField(max_length=100, blank=True, default='')
+    approval_status = models.CharField(max_length=100, blank=True, default='')
+    registry_id = models.PositiveIntegerField(null=True, blank=True, unique=True)
+    source_url = models.URLField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    address = models.TextField(blank=True, default='')
+    contact_email = models.EmailField(blank=True, default='')
+
+    class Meta:
+        ordering = ('name', 'province', 'territory')
+        indexes = [
+            models.Index(fields=['name'], name='school_name_idx'),
+            models.Index(fields=['sigle'], name='school_sigle_idx'),
+            models.Index(fields=['province'], name='school_province_idx'),
+        ]
     def __str__(self):
         return self.name
 
@@ -412,6 +431,21 @@ class Payment(models.Model):
     def __str__(self):
         return f"Paiement de {self.company.name} - {self.amount}€ ({self.status})"
     
+
+class Partner(models.Model):
+    name = models.CharField("Nom", max_length=150)
+    image = models.ImageField("Logo", upload_to='partners/')
+    position = models.PositiveIntegerField("Ordre d’affichage", default=0)
+    is_active = models.BooleanField("Afficher sur le site", default=True)
+
+    class Meta:
+        ordering = ('position', 'id')
+        verbose_name = "Partenaire de l’écosystème"
+        verbose_name_plural = "Partenaires de l’écosystème"
+
+    def __str__(self):
+        return self.name
+
 
 class Config(models.Model):
     site_name = models.CharField(max_length=255, default="Totinda")

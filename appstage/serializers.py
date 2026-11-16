@@ -2,6 +2,7 @@
 from urllib import request
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from .models import Partner
 from .models import (
     Student, School, SchoolUser, Company, CompanyUser,
     OffreStage, Candidature, AffectationStage, StageWeeklyReport, Notification, PushDevice, Evaluation, Formation, Competence, CompanySubscription, SubscriptionPlan, Payment, Config
@@ -57,10 +58,21 @@ def serialize_user_for_session(user, request=None):
                 "filiere": student.filiere,
                 "niveau": student.niveau,
                 "cv": cv_url,
+                "custom_school_name": student.custom_school_name,
                 "school": {
                     "id": student.school.id,
                     "name": student.school.name,
-                    "email": student.school.contact_email,
+                    "sigle": student.school.sigle,
+                    "logo": (
+                        request.build_absolute_uri(student.school.logo.url)
+                        if student.school.logo and request
+                        else (student.school.logo.url if student.school.logo else None)
+                    ),
+                    "category": student.school.category,
+                    "ownership": student.school.ownership,
+                    "territory": student.school.territory,
+                    "province": student.school.province,
+                    "contact_email": student.school.contact_email,
                     "address": student.school.address,
                 } if student.school else None,
             }
@@ -226,6 +238,26 @@ class StudentProfileUpdateSerializer(serializers.Serializer):
     telephone = serializers.CharField(max_length=15, trim_whitespace=True)
     filiere = serializers.CharField(max_length=100, trim_whitespace=True)
     niveau = serializers.CharField(max_length=100, trim_whitespace=True)
+    school = serializers.PrimaryKeyRelatedField(
+        queryset=School.objects.filter(is_active=True),
+        required=False,
+        allow_null=True,
+    )
+    custom_school_name = serializers.CharField(
+        max_length=200,
+        trim_whitespace=True,
+        required=False,
+        allow_blank=True,
+    )
+
+    def validate(self, attrs):
+        school = attrs.get('school')
+        custom_school_name = attrs.get('custom_school_name', '').strip()
+        if bool(school) == bool(custom_school_name):
+            raise serializers.ValidationError({
+                'school': "Sélectionnez un établissement ou saisissez son nom manuellement.",
+            })
+        return attrs
 
 
 class GoogleAuthSerializer(serializers.Serializer):
@@ -245,7 +277,23 @@ class StudentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Student
-        fields = ['id', 'user', 'school', 'filiere', 'niveau', 'cv', 'profile_completion']
+        fields = ['id', 'user', 'school', 'custom_school_name', 'filiere', 'niveau', 'cv', 'profile_completion']
+
+    def validate(self, attrs):
+        school = attrs.get('school', getattr(self.instance, 'school', None))
+        custom_school_name = attrs.get(
+            'custom_school_name',
+            getattr(self.instance, 'custom_school_name', ''),
+        ).strip()
+        if school and custom_school_name:
+            raise serializers.ValidationError({
+                'school': "Choisissez un établissement de la liste ou utilisez la saisie manuelle, pas les deux.",
+            })
+        if self.instance is None and not school and not custom_school_name:
+            raise serializers.ValidationError({
+                'school': "Sélectionnez un établissement ou saisissez son nom manuellement.",
+            })
+        return attrs
 
     def get_profile_completion(self, obj):
         return student_profile_completion(obj.user, obj)
@@ -270,6 +318,7 @@ class StudentSerializer(serializers.ModelSerializer):
 class OffreStageSerializer(serializers.ModelSerializer):
     nombre_candidats = serializers.IntegerField(read_only=True)
     plan_entreprise = serializers.SerializerMethodField()
+    days_remaining = serializers.SerializerMethodField()
     nom_entreprise = serializers.CharField(source='company.name', read_only=True)
     logo_entreprise = serializers.ImageField(source='company.logo', read_only=True)
     class Meta:
@@ -281,6 +330,9 @@ class OffreStageSerializer(serializers.ModelSerializer):
         if sub and sub.plan:
             return sub.plan.price
         return None
+
+    def get_days_remaining(self, obj):
+        return max((obj.end_date - timezone.localdate()).days, 0)
     
 
 class CandidatureSerializer(serializers.ModelSerializer):
@@ -292,6 +344,29 @@ class CandidatureSerializer(serializers.ModelSerializer):
     affectation_id = serializers.IntegerField(
         source='affectation.id', read_only=True, allow_null=True
     )
+
+    def validate_letter_of_support(self, value):
+        if value.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError(
+                "La lettre de recommandation ne doit pas dépasser 5 Mo."
+            )
+        if not value.name.lower().endswith('.pdf'):
+            raise serializers.ValidationError(
+                "La lettre de recommandation doit être un fichier PDF."
+            )
+        content_type = getattr(value, 'content_type', '')
+        if content_type and content_type not in {'application/pdf', 'application/octet-stream'}:
+            raise serializers.ValidationError(
+                "La lettre de recommandation doit être un fichier PDF."
+            )
+        position = value.tell()
+        signature = value.read(5)
+        value.seek(position)
+        if signature != b'%PDF-':
+            raise serializers.ValidationError(
+                "Le contenu de la lettre de recommandation n'est pas un PDF valide."
+            )
+        return value
 
     class Meta:
         model = Candidature
@@ -537,6 +612,13 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
         model = SubscriptionPlan
         fields = ['id', 'name', 'price', 'max_offres', 'duration_days']
         read_only_fields = ['*']
+
+class PartnerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Partner
+        fields = ['id', 'name', 'image']
+        read_only_fields = fields
+
 
 class ConfigSerializer(serializers.ModelSerializer):
     class Meta:
