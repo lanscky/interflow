@@ -1175,3 +1175,43 @@ class PaymentConfirmationTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch("appstage.views.PaymentViewSet._verify_paypal", return_value="paypal:monene-upgrade")
+    def test_upgrade_from_exhausted_free_plan_allows_publication(self, _verify):
+        free_plan = SubscriptionPlan.objects.create(name="Gratuit", price=0, max_offres=1, duration_days=30)
+        monene = SubscriptionPlan.objects.create(name="Monene", price="24.90", max_offres=None, duration_days=30)
+        CompanySubscription.objects.create(
+            company=self.company, plan=free_plan, nbre_offres=1,
+            end_date=timezone.now() + timedelta(days=30),
+        )
+        today = timezone.localdate()
+        payload = {
+            "title": "Stage de développement",
+            "type_contrat": "stage",
+            "description": "Offre de test",
+            "localisation": "Kinshasa",
+            "niveau_requis": "Licence",
+            "duration": "2 mois",
+            "start_date": today.isoformat(),
+            "end_date": (today + timedelta(days=60)).isoformat(),
+            "is_active": True,
+        }
+        response = self.client.post("/api/offres-stage/", payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        response = self.client.post("/api/offres-stage/", payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, response.data)
+
+        confirmation = self.client.post("/api/payments/confirm/", {
+            "provider": "paypal", "transaction_id": "monene-upgrade", "plan_id": monene.pk,
+        }, format="json")
+        self.assertEqual(confirmation.status_code, status.HTTP_201_CREATED, confirmation.data)
+        subscription = self.client.get("/api/company-subscriptions/").data["results"][0]
+        self.assertEqual(subscription["plan"], monene.pk)
+        self.assertTrue(subscription["is_active"])
+        self.assertIsNone(subscription["remaining_offres"])
+
+        response = self.client.post("/api/offres-stage/", {**payload, "company": 9999}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data["company"], self.company.pk)
+        self.assertTrue(response.data["is_active"])
+        self.assertEqual(OffreStage.objects.filter(company=self.company).count(), 2)

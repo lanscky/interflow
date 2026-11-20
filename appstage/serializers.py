@@ -324,6 +324,7 @@ class OffreStageSerializer(serializers.ModelSerializer):
     class Meta:
         model = OffreStage
         fields = "__all__"
+        read_only_fields = ['company']
 
     def get_plan_entreprise(self, obj):
         sub = getattr(obj.company, "companysubscription", None)

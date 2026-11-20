@@ -553,29 +553,23 @@ class OffreStageViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     def perform_create(self, serializer):
-        company_user = CompanyUser.objects.filter(user=self.request.user, is_active=True).first()
-
-        if company_user:
-            company = company_user.company
-            print("DEBUG - Company liée à l'utilisateur :", company)
-        else:
-            # Aucun lien avec une entreprise
-            raise APIException(detail={"error": "Utilisateur non lié à une entreprise."}, code=status.HTTP_403_FORBIDDEN)
+        company = company_for_user(self.request.user)
+        if company is None:
+            raise PermissionDenied("Utilisateur non lié à une entreprise.")
 
         try:
             subscription = CompanySubscription.objects.get(company=company)
         except CompanySubscription.DoesNotExist:
-            raise APIException(detail={"error": "Aucun abonnement actif trouvé."}, code=status.HTTP_403_FORBIDDEN)
+            raise PermissionDenied("Aucun abonnement actif trouvé.")
 
         if not subscription.is_active():
-            raise APIException(detail={"error": "Votre abonnement a expiré."}, code=status.HTTP_403_FORBIDDEN)
+            raise PermissionDenied("Votre abonnement a expiré.")
 
         remaining = subscription.remaining_offres()
         if remaining is not None and remaining <= 0:
-            raise APIException(detail={"error": "Vous avez atteint la limite d'offres pour votre abonnement."}, code=status.HTTP_403_FORBIDDEN)
+            raise PermissionDenied("Vous avez atteint la limite d'offres pour votre abonnement.")
 
         serializer.save(company=company)
-        #return Response(serializer.data)
 
 
 class CandidatureViewSet(viewsets.ModelViewSet):
